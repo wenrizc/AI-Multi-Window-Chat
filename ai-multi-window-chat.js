@@ -1481,6 +1481,22 @@
             tab.querySelector('#aiExportAllBtn').addEventListener('click', () => {
                 this.exportAllHistory();
             });
+            // Event delegation for view and delete buttons
+            tab.querySelector('#aiHistoryList').addEventListener('click', (e) => {
+                const viewBtn = e.target.closest('.ai-history-view-btn');
+                const deleteBtn = e.target.closest('.ai-history-delete-btn');
+                if (viewBtn) {
+                    const chatId = viewBtn.dataset.chatId;
+                    if (window.aiMultiWindow) {
+                        window.aiMultiWindow.resumeChat(chatId);
+                    }
+                } else if (deleteBtn) {
+                    const chatId = deleteBtn.dataset.chatId;
+                    if (window.aiMultiWindow) {
+                        window.aiMultiWindow.deleteChat(chatId);
+                    }
+                }
+            });
         }
 
         loadHistory() {
@@ -1497,7 +1513,10 @@
                 return;
             }
 
-            container.innerHTML = history.map(chat => `
+            container.innerHTML = history.map(chat => {
+                // Escape single quotes for HTML attribute
+                const safeChatId = chat.chatId.replace(/'/g, '&#39;');
+                return `
                 <div class="ai-message" style="cursor: pointer;">
                     <div class="ai-message-header">
                         <span class="ai-message-avatar">💬</span>
@@ -1507,11 +1526,11 @@
                         ${new Date(chat.updatedAt).toLocaleString()} · ${t('history__messageCount', chat.messageCount)}
                     </div>
                     <div class="ai-action-row">
-                        <button class="ai-btn ai-btn-secondary ai-btn-small" onclick="aiMultiWindow.resumeChat('${chat.chatId}')">${t('history__btnView')}</button>
-                        <button class="ai-btn ai-btn-danger ai-btn-small" onclick="aiMultiWindow.deleteChat('${chat.chatId}')">${t('history__btnDelete')}</button>
+                        <button class="ai-btn ai-btn-secondary ai-btn-small ai-history-view-btn" data-chat-id="${safeChatId}">${t('history__btnView')}</button>
+                        <button class="ai-btn ai-btn-danger ai-btn-small ai-history-delete-btn" data-chat-id="${safeChatId}">${t('history__btnDelete')}</button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         // Profile methods
