@@ -26,8 +26,7 @@
   },
   "homepage": "https://github.com/wenrizc/ai-chat#readme",
   "scripts": {
-    "build": "node build.mjs",
-    "build:release": "node build.mjs --release",
+    "build": "node build.mjs --release",
     "build:watch": "node build.mjs --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -35,7 +34,9 @@
     "esbuild": "^0.20.2"
   },
   "dependencies": {
+    "katex": "^0.16.27",
     "marked": "^17.0.1",
+    "marked-katex-extension": "^5.1.6",
     "openai": "^4.0.0"
   }
 }

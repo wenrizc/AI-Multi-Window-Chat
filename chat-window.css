@@ -123,6 +123,16 @@ body {
   font-size: 14px;
 }
 
+.message-content .katex {
+  font-size: 1em;
+}
+
+.message-content .katex-display {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .message-content code {
   background: rgba(0, 0, 0, 0.05);
   padding: 2px 6px;

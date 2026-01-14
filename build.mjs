@@ -16,7 +16,7 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(rootDir, 'dist');
 const releaseDir = path.join(rootDir, 'release');
 
-const options = [
+const buildOptions = [
   {
     entryPoints: [path.join(rootDir, 'background.js')],
     bundle: true,
@@ -37,14 +37,30 @@ const options = [
   }
 ];
 
+// For release mode, output directly to release/dist
+function getOptions() {
+  if (release) {
+    return buildOptions.map(opt => ({
+      ...opt,
+      outfile: opt.outfile.replace(
+        path.join(rootDir, 'dist'),
+        path.join(releaseDir, 'dist')
+      )
+    }));
+  }
+  return buildOptions;
+}
+
 async function buildAll() {
-  for (const opt of options) {
+  for (const opt of getOptions()) {
     await build(opt);
   }
+  await copyKaTeXAssets();
 }
 
 async function watchAll() {
-  for (const opt of options) {
+  await copyKaTeXAssets();
+  for (const opt of getOptions()) {
     const ctx = await context(opt);
     await ctx.watch();
   }
@@ -80,11 +96,20 @@ async function copyDir(srcDir, destDir) {
   }
 }
 
+async function copyKaTeXAssets() {
+  const katexSrcDir = path.join(rootDir, 'node_modules', 'katex', 'dist');
+  const katexDestDir = path.join(release ? path.join(releaseDir, 'dist') : distDir, 'katex');
+
+  await ensureExists(katexSrcDir);
+  await copyFile(path.join(katexSrcDir, 'katex.min.css'), path.join(katexDestDir, 'katex.min.css'));
+  await copyDir(path.join(katexSrcDir, 'fonts'), path.join(katexDestDir, 'fonts'));
+}
+
 async function prepareRelease() {
   await fs.rm(releaseDir, { recursive: true, force: true });
   await fs.mkdir(releaseDir, { recursive: true });
 
-  const dirsToCopy = ['icons', '_locales', 'dist'];
+  const dirsToCopy = ['icons', '_locales'];
   const filesToCopy = [
     'manifest.json',
     'popup.html',
@@ -107,6 +132,9 @@ async function prepareRelease() {
     await ensureExists(srcFile);
     await copyFile(srcFile, path.join(releaseDir, file));
   }
+
+  // Clean up dist directory after release build
+  await fs.rm(distDir, { recursive: true, force: true });
 }
 
 function isGlob(pattern) {
@@ -191,13 +219,16 @@ async function main() {
     return;
   }
 
-  await buildAll();
-
   if (release) {
     await prepareRelease();
+    await buildAll();
     await validateRelease();
     console.log('Release prepared in release/.');
+    return;
   }
+
+  await buildAll();
+  console.log('Build completed in dist/.');
 }
 
 main().catch((error) => {

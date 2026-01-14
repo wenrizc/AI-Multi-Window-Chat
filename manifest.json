@@ -25,7 +25,14 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["chat-window.html", "dist/chat-window.js", "chat-window.css", "i18n.js"],
+      "resources": [
+        "chat-window.html",
+        "dist/chat-window.js",
+        "dist/katex/katex.min.css",
+        "dist/katex/fonts/*",
+        "chat-window.css",
+        "i18n.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ],
