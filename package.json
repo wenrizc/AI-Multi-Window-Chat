@@ -27,6 +27,7 @@
   "homepage": "https://github.com/wenrizc/ai-chat#readme",
   "scripts": {
     "build": "node build.mjs",
+    "build:release": "node build.mjs --release",
     "build:watch": "node build.mjs --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
