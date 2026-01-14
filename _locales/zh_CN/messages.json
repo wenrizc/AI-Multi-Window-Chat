@@ -156,7 +156,7 @@
     "description": "语言说明"
   },
   "history__title": {
-    "message": "ai chat",
+    "message": "AI 多窗口对话",
     "description": "历史记录标题"
   },
   "history__empty": {

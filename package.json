@@ -19,12 +19,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wenrizc/ai-chat.git"
+    "url": "https://github.com/wenrizc/AI-Multi-Window-Chat.git"
   },
   "bugs": {
-    "url": "https://github.com/wenrizc/ai-chat/issues"
+    "url": "https://github.com/wenrizc/AI-Multi-Window-Chat/issues"
   },
-  "homepage": "https://github.com/wenrizc/ai-chat#readme",
+  "homepage": "https://github.com/wenrizc/AI-Multi-Window-Chat#readme",
   "scripts": {
     "build": "node build.mjs --release",
     "build:watch": "node build.mjs --watch",

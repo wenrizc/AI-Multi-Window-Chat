@@ -14,22 +14,34 @@
 
 AI Multi-Window Chat lets you open multiple draggable chat windows on any page, send selected text to a new chat, and manage/export conversation history. It works with OpenAI-compatible APIs by configuring a base URL, API key, and model.
 
+**Website**: [https://wenrizc.github.io/AI-Multi-Window-Chat/](https://wenrizc.github.io/AI-Multi-Window-Chat/)
+
 ## Features
 
 - **Multi-Window Chat** - Open multiple independent chat windows at once
 - **Floating Windows** - Drag, resize, minimize, and close
-- **Selection Toolbar** - Highlight text to launch a new chat with the selection
+- **Selection** - Highlight text to launch a new chat with the selection
 - **History Management** - Auto-save, reopen, delete, and export chats
 - **Multiple Export Formats** - Export chats as Markdown (.md) or plain text (.txt)
 - **Prompt Management** - Create, edit, delete, import, and export custom system prompts
 - **OpenAI Compatible** - Works with any OpenAI-compatible API endpoint
 
-## Install (Developer Mode)
+## Install
+
+### Quick Install
+
+1. Download the latest release package from the [Releases](https://github.com/wenrizc/AI-Multi-Window-Chat/releases) page
+2. Extract the downloaded zip file
+3. Open Chrome and go to `chrome://extensions/`
+4. Enable "Developer mode" (top right)
+5. Click "Load unpacked" and select the extracted folder
+
+### Install from Source
 
 1. Install dependencies:
    - `npm install`
 2. Build the background service worker:
-   - `npm run build` 
+   - `npm run build`
 3. Open Chrome and go to `chrome://extensions/`
 4. Enable "Developer mode" (top right)
 5. Click "Load unpacked" and select the release folder
@@ -50,6 +62,7 @@ AI Multi-Window Chat lets you open multiple draggable chat windows on any page, 
 - Click the window title to rename it.
 - Open the **History** tab to reopen, export, or delete chats.
 - Use the **Prompts** tab to manage custom system prompts for your conversations.
+- Use the **Config** tab to manage multiple API configurations and quickly switch between them.
 
 ## License
 

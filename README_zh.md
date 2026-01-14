@@ -14,25 +14,37 @@
 
 AI 多窗口聊天允许你在任意网页上打开多个可拖拽的聊天窗口，将选中的文字发送到新对话，并管理/导出对话历史。通过配置 API 地址、密钥和模型，可对接任何 OpenAI 兼容接口。
 
+**项目网站**: [https://wenrizc.github.io/AI-Multi-Window-Chat/](https://wenrizc.github.io/AI-Multi-Window-Chat/)
+
 ## 功能特色
 
 - **多窗口聊天** - 同时打开多个独立的聊天窗口
 - **浮动窗口** - 支持拖拽、缩放、最小化、关闭
-- **选中文本工具栏** - 选中文本后快速开启新对话
+- **选中文本** - 选中文本后快速开启新对话
 - **历史管理** - 自动保存、重开、删除、导出
 - **多种导出格式** - 支持导出为 Markdown (.md) 或纯文本 (.txt)
 - **提示词管理** - 创建、编辑、删除、导入、导出自定义系统提示词
 - **OpenAI 兼容** - 适配任意 OpenAI 兼容 API
 
-## 安装（开发者模式）
+## 安装
+
+### 快速安装
+
+1. 从 [Releases](https://github.com/wenrizc/AI-Multi-Window-Chat/releases) 页面下载最新版本的发布包
+2. 解压下载的 zip 文件
+3. 打开 Chrome 并访问 `chrome://extensions/`
+4. 开启右上角"开发者模式"
+5. 点击"加载未打包的扩展程序"，选择解压后的文件夹
+
+### 从源码安装
 
 1. 安装依赖：
    - `npm install`
 2. 构建后台脚本：
    - `npm run build`
 3. 打开 Chrome 并访问 `chrome://extensions/`
-4. 开启右上角“开发者模式”
-5. 点击“加载未打包的扩展程序”，选择release目录
+4. 开启右上角"开发者模式"
+5. 点击"加载未打包的扩展程序"，选择 release 目录
 
 ## 配置 API
 
