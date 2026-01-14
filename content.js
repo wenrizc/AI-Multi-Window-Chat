@@ -105,7 +105,7 @@ class AIMultiWindow {
     }
   }
 
-  createChatWindow(initialMessage = '', chatId = null, title = null, historyMessages = null) {
+  createChatWindow(initialMessage = '', chatId = null, title = null, historyMessages = null, promptId = null) {
     this.windowCounter++;
     const windowId = `ai-window-${this.windowCounter}`;
 
@@ -161,7 +161,8 @@ class AIMultiWindow {
           initialMessage: initialMessage,
           chatId: chatId,
           title: title,
-          historyMessages: historyMessages
+          historyMessages: historyMessages,
+          promptId: promptId
         }, '*');
       }
     }, 500);
@@ -387,8 +388,8 @@ class AIMultiWindow {
   setupRuntimeMessageListener() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request.type === 'OPEN_HISTORY_CHAT') {
-        const { chatId, title, messages } = request;
-        this.createChatWindow('', chatId, title, messages);
+        const { chatId, title, messages, promptId } = request;
+        this.createChatWindow('', chatId, title, messages, promptId);
         sendResponse({ success: true });
         return true;
       }

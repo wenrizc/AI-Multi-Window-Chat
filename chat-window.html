@@ -16,13 +16,14 @@
       </div>
     </div>
 
+    <div class="prompt-selector">
+      <select id="promptSelect">
+        <option value="" data-i18n="prompt__noPrompt">No Prompt</option>
+      </select>
+    </div>
+
     <div class="input-container">
-      <textarea
-        id="messageInput"
-        data-i18n-placeholder="chat__placeholderInput"
-        placeholder="Enter your question..."
-        rows="1"
-      ></textarea>
+      <textarea id="messageInput" rows="1"></textarea>
       <button id="sendBtn" class="send-btn" data-i18n-title="chat__btnSend" title="Send">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>

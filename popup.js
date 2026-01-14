@@ -23,6 +23,16 @@ const elements = {
   saveBtn: document.getElementById('saveBtn'),
   status: document.getElementById('status'),
   presetBtns: document.querySelectorAll('.preset-btn'),
+  // Prompts
+  promptList: document.getElementById('promptList'),
+  addPromptBtn: document.getElementById('addPromptBtn'),
+  defaultPromptSelect: document.getElementById('defaultPromptSelect'),
+  promptName: document.getElementById('promptName'),
+  promptContent: document.getElementById('promptContent'),
+  savePromptBtn: document.getElementById('savePromptBtn'),
+  deletePromptBtn: document.getElementById('deletePromptBtn'),
+  promptStatus: document.getElementById('promptStatus'),
+  // History
   historyList: document.getElementById('historyList'),
   historyStatus: document.getElementById('historyStatus'),
   exportAllBtn: document.getElementById('exportAllBtn'),
@@ -41,6 +51,11 @@ let selectedProfileId = null;
 let activeProfileId = null;
 let isApiKeyVisible = false;
 
+// Prompts state
+let prompts = [];
+let selectedPromptId = null;
+let defaultPromptId = null;
+
 async function init() {
   document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
   document.title = t('popup__pageTitle');
@@ -51,6 +66,7 @@ async function init() {
   }
   setupTabs();
   setupConfigHandlers();
+  setupPromptHandlers();
   setupHistoryHandlers();
   await loadProfiles();
   loadHistory();
@@ -74,6 +90,8 @@ function setupTabs() {
 
       if (targetTab === 'history') {
         loadHistory();
+      } else if (targetTab === 'prompts') {
+        loadPrompts();
       }
     });
   });
@@ -120,6 +138,31 @@ function setupConfigHandlers() {
       elements.apiUrl.focus();
     });
   });
+}
+
+function setupPromptHandlers() {
+  elements.savePromptBtn.addEventListener('click', savePrompt);
+  elements.addPromptBtn.addEventListener('click', addPrompt);
+  elements.deletePromptBtn.addEventListener('click', () => {
+    const prompt = getPromptById(selectedPromptId);
+    if (!prompt) return;
+    const name = prompt.name || t('prompt__empty');
+    showConfirmDialog(t('prompt__confirmDelete', name), async () => {
+      await deletePrompt();
+    });
+  });
+  elements.defaultPromptSelect.addEventListener('change', () => {
+    const promptId = elements.defaultPromptSelect.value;
+    setDefaultPrompt(promptId);
+  });
+
+  if (elements.promptList) {
+    elements.promptList.addEventListener('click', (event) => {
+      const item = event.target.closest('.profile-item');
+      if (!item) return;
+      selectPrompt(item.dataset.id);
+    });
+  }
 }
 
 function setupHistoryHandlers() {
@@ -547,6 +590,271 @@ function getProfileById(profileId) {
   return profiles.find(profile => profile.id === profileId);
 }
 
+// ===== Prompt Functions =====
+
+async function loadPrompts() {
+  try {
+    const result = await chrome.storage.local.get(['system_prompts', 'default_system_prompt_id']);
+
+    prompts = Array.isArray(result.system_prompts) ? result.system_prompts : [];
+    defaultPromptId = result.default_system_prompt_id || null;
+
+    if (prompts.length === 0) {
+      selectedPromptId = null;
+      renderPrompts();
+      clearPromptForm();
+      setPromptEmptyState(true);
+      return;
+    }
+
+    // Validate default prompt exists
+    const defaultExists = prompts.some(prompt => prompt.id === defaultPromptId);
+    if (!defaultExists) {
+      defaultPromptId = null;
+      await chrome.storage.local.set({ default_system_prompt_id: '' });
+    }
+
+    selectedPromptId = defaultPromptId || (prompts[0] && prompts[0].id);
+    renderPrompts();
+
+    const selectedPrompt = getPromptById(selectedPromptId);
+    if (selectedPrompt) {
+      updatePromptForm(selectedPrompt);
+    }
+    setPromptEmptyState(!selectedPrompt);
+  } catch (error) {
+    console.error('Failed to load prompts:', error);
+  }
+}
+
+function renderPrompts() {
+  if (!elements.promptList) return;
+
+  if (prompts.length === 0) {
+    elements.promptList.classList.add('empty');
+    elements.promptList.innerHTML = `
+      <div class="history-empty">
+        <div class="history-empty-icon">📝</div>
+        <div data-i18n="prompt__empty">${t('prompt__empty')}</div>
+      </div>
+    `;
+  } else {
+    elements.promptList.classList.remove('empty');
+    elements.promptList.innerHTML = prompts.map(prompt => {
+      const isSelected = prompt.id === selectedPromptId;
+      const isDefault = prompt.id === defaultPromptId;
+      const name = prompt.name || t('prompt__empty');
+      return `
+        <button class="profile-item${isSelected ? ' active' : ''}${isDefault ? ' current' : ''}" data-id="${prompt.id}">
+          <span class="profile-dot"></span>
+          <span class="profile-name">${escapeHtml(name)}</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  if (elements.defaultPromptSelect) {
+    if (prompts.length === 0) {
+      elements.defaultPromptSelect.innerHTML = `<option value="">${t('prompt__noPrompt')}</option>`;
+      elements.defaultPromptSelect.value = '';
+      elements.defaultPromptSelect.disabled = true;
+    } else {
+      const options = prompts.map(prompt => {
+        const name = prompt.name || t('prompt__empty');
+        return `<option value="${prompt.id}">${escapeHtml(name)}</option>`;
+      }).join('');
+
+      elements.defaultPromptSelect.innerHTML = `<option value="">${t('prompt__noPrompt')}</option>${options}`;
+      elements.defaultPromptSelect.value = defaultPromptId || '';
+      elements.defaultPromptSelect.disabled = false;
+    }
+  }
+}
+
+function selectPrompt(promptId) {
+  const prompt = getPromptById(promptId);
+  if (!prompt) return;
+  selectedPromptId = promptId;
+  renderPrompts();
+  updatePromptForm(prompt);
+  setPromptEmptyState(false);
+}
+
+function updatePromptForm(prompt) {
+  elements.promptName.value = prompt.name || '';
+  elements.promptContent.value = prompt.content || '';
+}
+
+function clearPromptForm() {
+  elements.promptName.value = '';
+  elements.promptContent.value = '';
+}
+
+function setPromptEmptyState(isEmpty) {
+  elements.promptName.disabled = isEmpty;
+  elements.promptContent.disabled = isEmpty;
+  elements.savePromptBtn.disabled = isEmpty;
+  elements.deletePromptBtn.disabled = isEmpty;
+}
+
+function collectPromptFormData() {
+  return {
+    id: selectedPromptId,
+    name: elements.promptName.value.trim(),
+    content: elements.promptContent.value.trim()
+  };
+}
+
+function validatePrompt(prompt) {
+  if (!prompt.name) {
+    showPromptStatus(`${t('prompt__labelName')} ${t('common__error')}`, 'error');
+    return false;
+  }
+
+  if (!prompt.content) {
+    showPromptStatus(`${t('prompt__labelContent')} ${t('common__error')}`, 'error');
+    return false;
+  }
+
+  return true;
+}
+
+async function savePrompt() {
+  const prompt = collectPromptFormData();
+  if (!validatePrompt(prompt)) return;
+
+  const now = new Date().toISOString();
+
+  const index = prompts.findIndex(item => item.id === prompt.id);
+  if (index === -1) {
+    // New prompt
+    prompt.id = prompt.id || generatePromptId();
+    prompt.createdAt = now;
+    prompt.updatedAt = now;
+    prompts.push(prompt);
+    selectedPromptId = prompt.id;
+  } else {
+    // Update existing prompt
+    prompts[index] = {
+      ...prompts[index],
+      name: prompt.name,
+      content: prompt.content,
+      updatedAt: now
+    };
+  }
+
+  try {
+    await persistPrompts();
+    renderPrompts();
+    showPromptStatus(t('prompt__statusSaved'), 'success');
+  } catch (error) {
+    console.error('Failed to save prompt:', error);
+    showPromptStatus(t('popup__statusError'), 'error');
+  }
+}
+
+async function addPrompt() {
+  const now = new Date().toISOString();
+  const newPrompt = {
+    id: generatePromptId(),
+    name: getDefaultPromptName(prompts.length + 1),
+    content: '',
+    createdAt: now,
+    updatedAt: now
+  };
+  prompts = [newPrompt, ...prompts];
+  selectedPromptId = newPrompt.id;
+  renderPrompts();
+  updatePromptForm(newPrompt);
+  setPromptEmptyState(false);
+  elements.promptName.focus();
+  try {
+    await persistPrompts();
+  } catch (error) {
+    console.error('Failed to add prompt:', error);
+  }
+}
+
+async function deletePrompt() {
+  if (!selectedPromptId) return;
+  const deletedId = selectedPromptId;
+
+  prompts = prompts.filter(prompt => prompt.id !== selectedPromptId);
+
+  if (prompts.length === 0) {
+    defaultPromptId = null;
+    selectedPromptId = null;
+  } else {
+    if (selectedPromptId === defaultPromptId) {
+      defaultPromptId = null;
+    }
+    selectedPromptId = prompts[0].id;
+  }
+
+  const selectedPrompt = getPromptById(selectedPromptId);
+  try {
+    await persistPrompts();
+    renderPrompts();
+    if (selectedPrompt) {
+      updatePromptForm(selectedPrompt);
+      setPromptEmptyState(false);
+    } else {
+      clearPromptForm();
+      setPromptEmptyState(true);
+    }
+    showPromptStatus(t('prompt__statusDeleted'), 'success');
+  } catch (error) {
+    console.error('Failed to delete prompt:', error);
+    showPromptStatus(t('popup__statusError'), 'error');
+  }
+}
+
+async function setDefaultPrompt(promptId) {
+  defaultPromptId = promptId || null;
+  try {
+    await chrome.storage.local.set({ default_system_prompt_id: defaultPromptId || '' });
+    renderPrompts();
+    if (defaultPromptId) {
+      showPromptStatus(t('prompt__statusDefaultSet'), 'success');
+    }
+  } catch (error) {
+    console.error('Failed to set default prompt:', error);
+    showPromptStatus(t('popup__statusError'), 'error');
+  }
+}
+
+async function persistPrompts() {
+  await chrome.storage.local.set({
+    system_prompts: prompts,
+    default_system_prompt_id: defaultPromptId || ''
+  });
+}
+
+function generatePromptId() {
+  if (crypto?.randomUUID) {
+    return `prompt-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `prompt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getDefaultPromptName(index) {
+  return t('prompt__defaultName', index);
+}
+
+function getPromptById(promptId) {
+  return prompts.find(prompt => prompt.id === promptId);
+}
+
+function showPromptStatus(message, type = 'success') {
+  elements.promptStatus.textContent = message;
+  elements.promptStatus.className = `status show ${type}`;
+
+  setTimeout(() => {
+    elements.promptStatus.classList.remove('show');
+  }, 3000);
+}
+
+
 function showStatus(message, type = 'success') {
   elements.status.textContent = message;
   elements.status.className = `status show ${type}`;
@@ -642,6 +950,7 @@ async function viewChat(chat) {
       type: 'OPEN_HISTORY_CHAT',
       chatId: chat.chatId,
       title: chat.title,
+      promptId: chat.promptId || null,
       messages: chat.messages.map(msg => ({
         role: msg.role,
         content: msg.content

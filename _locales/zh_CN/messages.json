@@ -48,7 +48,7 @@
     "description": "配置名称占位符"
   },
   "popup__labelActiveProfile": {
-    "message": "当前使用",
+    "message": "默认",
     "description": "当前配置标签"
   },
   "popup__placeholderApiUrl": {
@@ -402,5 +402,69 @@
   "error__emptyApiResponse": {
     "message": "API 返回空响应，请重试。",
     "description": "API 返回空响应时的错误消息"
+  },
+  "popup__tabPrompts": {
+    "message": "提示词",
+    "description": "提示词标签页"
+  },
+  "prompt__empty": {
+    "message": "暂无提示词",
+    "description": "空提示词消息"
+  },
+  "prompt__labelName": {
+    "message": "名称",
+    "description": "提示词名称标签"
+  },
+  "prompt__labelContent": {
+    "message": "内容",
+    "description": "提示词内容标签"
+  },
+  "prompt__placeholderName": {
+    "message": "提示词名称",
+    "description": "提示词名称占位符"
+  },
+  "prompt__placeholderContent": {
+    "message": "输入提示词内容...",
+    "description": "提示词内容占位符"
+  },
+  "prompt__btnAdd": {
+    "message": "新增",
+    "description": "新增提示词按钮"
+  },
+  "prompt__btnSave": {
+    "message": "保存",
+    "description": "保存提示词按钮"
+  },
+  "prompt__btnDelete": {
+    "message": "删除",
+    "description": "删除提示词按钮"
+  },
+  "prompt__defaultLabel": {
+    "message": "默认",
+    "description": "默认提示词标签"
+  },
+  "prompt__noPrompt": {
+    "message": "无提示词",
+    "description": "无提示词选项"
+  },
+  "prompt__statusSaved": {
+    "message": "提示词已保存",
+    "description": "提示词保存成功消息"
+  },
+  "prompt__statusDeleted": {
+    "message": "提示词已删除",
+    "description": "提示词删除成功消息"
+  },
+  "prompt__statusDefaultSet": {
+    "message": "已设为默认",
+    "description": "默认提示词设置成功消息"
+  },
+  "prompt__confirmDelete": {
+    "message": "确定要删除提示词「$1」吗？",
+    "description": "确认删除提示词消息（带占位符）"
+  },
+  "prompt__defaultName": {
+    "message": "提示词 $1",
+    "description": "默认提示词名称（带序号）"
   }
 }

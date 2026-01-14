@@ -5,14 +5,20 @@ class ChatWindow {
     this.windowId = null;
     this.chatId = null;
     this.title = null;
+    this.promptId = null;
     this.messages = [];
-    this.isLoading = false; 
+    this.isLoading = false;
+
+    // Prompts
+    this.prompts = [];
+    this.selectedPrompt = null;
 
     this.elements = {
       messagesContainer: document.getElementById('messagesContainer'),
       messageInput: document.getElementById('messageInput'),
       sendBtn: document.getElementById('sendBtn'),
-      loadingIndicator: document.getElementById('loadingIndicator')
+      loadingIndicator: document.getElementById('loadingIndicator'),
+      promptSelect: document.getElementById('promptSelect')
     };
 
     this.init();
@@ -58,6 +64,7 @@ class ChatWindow {
         }
 
         this.title = event.data.title || t('chat__windowTitle', '1');
+        this.promptId = event.data.promptId || null;
 
         if (event.data.historyMessages && Array.isArray(event.data.historyMessages)) {
           this.loadHistoryMessages(event.data.historyMessages);
@@ -68,6 +75,9 @@ class ChatWindow {
           this.adjustTextareaHeight();
           this.elements.messageInput.focus();
         }
+
+        // Load prompts after receiving chat data
+        this.loadPrompts();
 
         window.addEventListener('message', (e) => {
           if (e.data.type === 'UPDATE_TITLE' && e.data.windowId === this.windowId) {
@@ -155,9 +165,23 @@ class ChatWindow {
     this.showLoadingIndicator();
 
     try {
+      // Build request messages
+      let requestMessages = [];
+
+      // Add system message if prompt is selected
+      if (this.selectedPrompt && this.selectedPrompt.content) {
+        requestMessages.push({
+          role: 'system',
+          content: this.selectedPrompt.content
+        });
+      }
+
+      // Add conversation history
+      requestMessages = requestMessages.concat(this.messages);
+
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
-        messages: this.messages
+        messages: requestMessages
       });
 
       if (response.success) {
@@ -225,6 +249,7 @@ class ChatWindow {
       const chatData = {
         chatId: this.chatId,
         title: this.title,
+        promptId: this.selectedPrompt?.id || '',
         createdAt: this.chatId ? this.chatId.replace('chat-', '').replace(/-/g, ':') : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messageCount: this.messages.length,
@@ -241,6 +266,69 @@ class ChatWindow {
     } catch (error) {
       console.error('Failed to save chat history:', error);
     }
+  }
+
+  // ===== Prompt Functions =====
+
+  async loadPrompts(historyPromptId = null) {
+    try {
+      const result = await chrome.storage.local.get(['system_prompts', 'default_system_prompt_id']);
+      this.prompts = Array.isArray(result.system_prompts) ? result.system_prompts : [];
+      const defaultPromptId = result.default_system_prompt_id || '';
+
+      // Render selector
+      this.renderPromptSelector();
+
+      // Determine target prompt ID
+      // Priority: history prompt > "no prompt" (null) > global default
+      let targetPromptId = null;
+
+      if (historyPromptId) {
+        // If restoring from history, use history prompt
+        const promptExists = this.prompts.some(p => p.id === historyPromptId);
+        if (promptExists) {
+          targetPromptId = historyPromptId;
+        } else {
+          console.warn(`Prompt "${historyPromptId}" has been deleted, using "no prompt"`);
+          targetPromptId = null;
+        }
+      }
+      // For new chats, default to "no prompt" (null), not global default
+
+      // Set selected prompt
+      if (targetPromptId) {
+        this.selectedPrompt = this.getPromptById(targetPromptId);
+        this.elements.promptSelect.value = targetPromptId;
+      } else {
+        this.selectedPrompt = null;
+        this.elements.promptSelect.value = '';
+      }
+
+      // Setup change listener
+      this.elements.promptSelect.addEventListener('change', () => {
+        const selectedId = this.elements.promptSelect.value;
+        this.selectedPrompt = selectedId ? this.getPromptById(selectedId) : null;
+      });
+    } catch (error) {
+      console.error('Failed to load prompts:', error);
+    }
+  }
+
+  renderPromptSelector() {
+    const select = this.elements.promptSelect;
+    select.innerHTML = `<option value="">${t('prompt__noPrompt')}</option>`;
+
+    this.prompts.forEach(prompt => {
+      const option = document.createElement('option');
+      option.value = prompt.id;
+      option.textContent = prompt.name || t('prompt__empty');
+      select.appendChild(option);
+    });
+  }
+
+  getPromptById(promptId) {
+    if (!promptId) return null;
+    return this.prompts.find(p => p.id === promptId) || null;
   }
 }
 

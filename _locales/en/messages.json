@@ -48,7 +48,7 @@
     "description": "Profile name placeholder"
   },
   "popup__labelActiveProfile": {
-    "message": "Current",
+    "message": "Default",
     "description": "Active profile label"
   },
   "popup__placeholderApiUrl": {
@@ -402,5 +402,69 @@
   "error__emptyApiResponse": {
     "message": "Empty response from API. Please try again.",
     "description": "Error message when API returns empty response"
+  },
+  "popup__tabPrompts": {
+    "message": "Prompts",
+    "description": "Prompts tab"
+  },
+  "prompt__empty": {
+    "message": "No prompts yet",
+    "description": "Empty prompts message"
+  },
+  "prompt__labelName": {
+    "message": "Name",
+    "description": "Prompt name label"
+  },
+  "prompt__labelContent": {
+    "message": "Content",
+    "description": "Prompt content label"
+  },
+  "prompt__placeholderName": {
+    "message": "Prompt name",
+    "description": "Prompt name placeholder"
+  },
+  "prompt__placeholderContent": {
+    "message": "Enter prompt content...",
+    "description": "Prompt content placeholder"
+  },
+  "prompt__btnAdd": {
+    "message": "New",
+    "description": "Add prompt button"
+  },
+  "prompt__btnSave": {
+    "message": "Save",
+    "description": "Save prompt button"
+  },
+  "prompt__btnDelete": {
+    "message": "Delete",
+    "description": "Delete prompt button"
+  },
+  "prompt__defaultLabel": {
+    "message": "Default",
+    "description": "Default prompt label"
+  },
+  "prompt__noPrompt": {
+    "message": "No Prompt",
+    "description": "No prompt option"
+  },
+  "prompt__statusSaved": {
+    "message": "Prompt saved",
+    "description": "Prompt saved success message"
+  },
+  "prompt__statusDeleted": {
+    "message": "Prompt deleted",
+    "description": "Prompt deleted success message"
+  },
+  "prompt__statusDefaultSet": {
+    "message": "Default prompt updated",
+    "description": "Default prompt set success message"
+  },
+  "prompt__confirmDelete": {
+    "message": "Delete prompt \"$1\"?",
+    "description": "Confirm delete prompt message with placeholder"
+  },
+  "prompt__defaultName": {
+    "message": "Prompt $1",
+    "description": "Default prompt name with index"
   }
 }

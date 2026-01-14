@@ -232,6 +232,7 @@
     input[type="password"],
     input[type="text"],
     input[type="url"],
+    textarea,
     select {
       width: 100%;
       padding: 9px 12px;
@@ -243,9 +244,16 @@
       background: #ffffff;
     }
 
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      line-height: 1.5;
+    }
+
     input[type="password"]:focus,
     input[type="text"]:focus,
     input[type="url"]:focus,
+    textarea:focus,
     select:focus {
       outline: none;
       border-color: var(--accent);
@@ -615,6 +623,7 @@
 
   <div class="tabs">
     <button class="tab active" data-tab="config" data-i18n="popup__tabConfig">Config</button>
+    <button class="tab" data-tab="prompts" data-i18n="popup__tabPrompts">Prompts</button>
     <button class="tab" data-tab="history" data-i18n="popup__tabHistory">History</button>
   </div>
 
@@ -622,7 +631,7 @@
     <div class="config-toolbar">
       <button id="addProfileBtn" class="btn btn-primary btn-small" data-i18n="popup__btnAddProfile">New</button>
       <div class="config-toolbar-right">
-        <label for="activeProfileSelect" data-i18n="popup__labelActiveProfile">Current</label>
+        <label for="activeProfileSelect" data-i18n="popup__labelActiveProfile">Default</label>
         <select id="activeProfileSelect"></select>
       </div>
     </div>
@@ -634,20 +643,12 @@
       <div class="profile-details">
         <div class="input-group">
           <label for="profileName" data-i18n="popup__labelProfileName">Name</label>
-          <input
-            type="text"
-            id="profileName"
-            data-i18n-placeholder="popup__placeholderProfileName"
-          />
+          <input type="text" id="profileName" />
         </div>
 
         <div class="input-group">
           <label for="apiUrl" data-i18n="popup__labelApiUrl">API URL</label>
-          <input
-            type="url"
-            id="apiUrl"
-            data-i18n-placeholder="popup__placeholderApiUrl"
-          />
+          <input type="url" id="apiUrl" />
           <div class="preset-buttons">
             <button class="preset-btn" data-url="https://api.openai.com/v1" data-i18n="popup__presetOpenAI">OpenAI</button>
             <button class="preset-btn" data-url="https://api.deepseek.com" data-i18n="popup__presetDeepSeek">DeepSeek</button>
@@ -658,10 +659,7 @@
         <div class="input-group">
           <label for="apiKey" data-i18n="popup__labelApiKey">API Key</label>
           <div class="inline-actions">
-            <input
-              type="password"
-              id="apiKey"
-            />
+            <input type="password" id="apiKey" />
             <button id="toggleApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnShowKey">Show</button>
             <button id="copyApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnCopyKey">Copy</button>
           </div>
@@ -669,10 +667,7 @@
 
         <div class="input-group">
           <label for="modelName" data-i18n="popup__labelModelName">Model Name</label>
-          <input
-            type="text"
-            id="modelName"
-          />
+          <input type="text" id="modelName" />
         </div>
 
         <div class="action-row">
@@ -680,6 +675,40 @@
           <button id="setActiveBtn" class="btn btn-secondary" data-i18n="popup__btnSetActive">Set Current</button>
           <button id="saveBtn" class="btn btn-primary" data-i18n="popup__btnSaveProfile">Save</button>
           <button id="deleteBtn" class="btn btn-danger" data-i18n="popup__btnDeleteProfile">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="promptsTab">
+    <div class="config-toolbar">
+      <button id="addPromptBtn" class="btn btn-primary btn-small" data-i18n="prompt__btnAdd">New</button>
+      <div class="config-toolbar-right">
+        <label for="defaultPromptSelect" data-i18n="prompt__defaultLabel">Default</label>
+        <select id="defaultPromptSelect">
+          <option value="" data-i18n="prompt__noPrompt">No Prompt</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="promptStatus" class="status"></div>
+
+    <div class="config-grid">
+      <div class="profile-list" id="promptList"></div>
+      <div class="profile-details">
+        <div class="input-group">
+          <label for="promptName" data-i18n="prompt__labelName">Name</label>
+          <input type="text" id="promptName" />
+        </div>
+
+        <div class="input-group">
+          <label for="promptContent" data-i18n="prompt__labelContent">Content</label>
+          <textarea id="promptContent" rows="12"></textarea>
+        </div>
+
+        <div class="action-row">
+          <button id="savePromptBtn" class="btn btn-primary" data-i18n="prompt__btnSave">Save</button>
+          <button id="deletePromptBtn" class="btn btn-danger" data-i18n="prompt__btnDelete">Delete</button>
         </div>
       </div>
     </div>
