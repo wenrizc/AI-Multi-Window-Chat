@@ -152,20 +152,30 @@ class AIMultiWindow {
       initialMessage: initialMessage
     });
 
-    setTimeout(() => {
-      const iframe = windowContainer.querySelector('iframe');
-      if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage({
-          type: 'INIT_CHAT',
-          windowId: windowId,
-          initialMessage: initialMessage,
-          chatId: chatId,
-          title: title,
-          historyMessages: historyMessages,
-          promptId: promptId
-        }, '*');
+    const iframe = windowContainer.querySelector('iframe');
+    const sendInitMessage = () => {
+      if (!iframe || !iframe.contentWindow) return;
+      iframe.contentWindow.postMessage({
+        type: 'INIT_CHAT',
+        windowId: windowId,
+        initialMessage: initialMessage,
+        chatId: chatId,
+        title: title,
+        historyMessages: historyMessages,
+        promptId: promptId
+      }, '*');
+    };
+
+    if (iframe) {
+      iframe.addEventListener('load', () => {
+        sendInitMessage();
+      }, { once: true });
+
+      // Fallback: if iframe is already loaded for some reason
+      if (iframe.complete) {
+        sendInitMessage();
       }
-    }, 500);
+    }
 
     return windowId;
   }

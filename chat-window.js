@@ -281,11 +281,8 @@ class ChatWindow {
       this.prompts = Array.isArray(result.system_prompts) ? result.system_prompts : [];
       const defaultPromptId = result.default_system_prompt_id || '';
 
-      // Render selector
-      this.renderPromptSelector();
-
-      // Determine target prompt ID
-      // Priority: history prompt > "no prompt" (null) > global default
+      // Determine target prompt ID FIRST
+      // Priority: history prompt > global default > "no prompt" (null)
       let targetPromptId = null;
 
       if (historyPromptId) {
@@ -294,20 +291,28 @@ class ChatWindow {
         if (promptExists) {
           targetPromptId = historyPromptId;
         } else {
-          console.warn(`Prompt "${historyPromptId}" has been deleted, using "no prompt"`);
-          targetPromptId = null;
+          console.warn(`Prompt "${historyPromptId}" has been deleted, using global default or no prompt`);
+          // Fall through to use global default
         }
       }
-      // For new chats, default to "no prompt" (null), not global default
 
-      // Set selected prompt
+      // For new chats (or when history prompt was deleted), use global default if set
+      if (!targetPromptId && defaultPromptId) {
+        const defaultExists = this.prompts.some(p => p.id === defaultPromptId);
+        if (defaultExists) {
+          targetPromptId = defaultPromptId;
+        }
+      }
+
+      // Set selected prompt BEFORE rendering
       if (targetPromptId) {
         this.selectedPrompt = this.getPromptById(targetPromptId);
-        this.elements.promptSelect.value = targetPromptId;
       } else {
         this.selectedPrompt = null;
-        this.elements.promptSelect.value = '';
       }
+
+      // Render selector with the correct value already determined
+      this.renderPromptSelector(targetPromptId);
 
       // Setup change listener
       this.elements.promptSelect.addEventListener('change', () => {
@@ -319,7 +324,7 @@ class ChatWindow {
     }
   }
 
-  renderPromptSelector() {
+  renderPromptSelector(selectedId = null) {
     const select = this.elements.promptSelect;
     select.innerHTML = `<option value="">${t('prompt__noPrompt')}</option>`;
 
@@ -327,6 +332,9 @@ class ChatWindow {
       const option = document.createElement('option');
       option.value = prompt.id;
       option.textContent = prompt.name || t('prompt__empty');
+      if (prompt.id === selectedId) {
+        option.selected = true;
+      }
       select.appendChild(option);
     });
   }
