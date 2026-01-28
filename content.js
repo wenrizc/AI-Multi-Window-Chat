@@ -105,7 +105,7 @@ class AIMultiWindow {
     }
   }
 
-  createChatWindow(initialMessage = '', chatId = null, title = null, historyMessages = null, promptId = null) {
+  createChatWindow(initialMessage = '', chatId = null, title = null, historyMessages = null, promptId = null, profileId = null) {
     this.windowCounter++;
     const windowId = `ai-window-${this.windowCounter}`;
 
@@ -153,18 +153,19 @@ class AIMultiWindow {
     });
 
     const iframe = windowContainer.querySelector('iframe');
-    const sendInitMessage = () => {
-      if (!iframe || !iframe.contentWindow) return;
-      iframe.contentWindow.postMessage({
-        type: 'INIT_CHAT',
-        windowId: windowId,
-        initialMessage: initialMessage,
-        chatId: chatId,
-        title: title,
-        historyMessages: historyMessages,
-        promptId: promptId
-      }, '*');
-    };
+      const sendInitMessage = () => {
+        if (!iframe || !iframe.contentWindow) return;
+        iframe.contentWindow.postMessage({
+          type: 'INIT_CHAT',
+          windowId: windowId,
+          initialMessage: initialMessage,
+          chatId: chatId,
+          title: title,
+          historyMessages: historyMessages,
+          promptId: promptId,
+          profileId: profileId
+        }, '*');
+      };
 
     if (iframe) {
       iframe.addEventListener('load', () => {
@@ -398,8 +399,8 @@ class AIMultiWindow {
   setupRuntimeMessageListener() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request.type === 'OPEN_HISTORY_CHAT') {
-        const { chatId, title, messages, promptId } = request;
-        this.createChatWindow('', chatId, title, messages, promptId);
+        const { chatId, title, messages, promptId, profileId } = request;
+        this.createChatWindow('', chatId, title, messages, promptId, profileId);
         sendResponse({ success: true });
         return true;
       }

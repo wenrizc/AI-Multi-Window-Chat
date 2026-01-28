@@ -451,6 +451,10 @@
     "message": "无提示词",
     "description": "无提示词选项"
   },
+  "chat__btnSwitchConfig": {
+    "message": "切换配置",
+    "description": "聊天窗口里切换配置按钮提示"
+  },
   "prompt__statusSaved": {
     "message": "提示词已保存",
     "description": "提示词保存成功消息"

@@ -451,6 +451,10 @@
     "message": "No Prompt",
     "description": "No prompt option"
   },
+  "chat__btnSwitchConfig": {
+    "message": "Switch Config",
+    "description": "Tooltip for config switch button in chat window"
+  },
   "prompt__statusSaved": {
     "message": "Prompt saved",
     "description": "Prompt saved success message"

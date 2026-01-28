@@ -11,6 +11,7 @@ class ChatWindow {
     this.chatId = null;
     this.title = null;
     this.promptId = null;
+    this.profileId = null;
     this.messages = [];
     this.isLoading = false;
 
@@ -18,12 +19,17 @@ class ChatWindow {
     this.prompts = [];
     this.selectedPrompt = null;
 
+    // API Profiles (Configs)
+    this.apiProfiles = [];
+    this.selectedProfile = null;
+
     this.elements = {
       messagesContainer: document.getElementById('messagesContainer'),
       messageInput: document.getElementById('messageInput'),
       sendBtn: document.getElementById('sendBtn'),
       loadingIndicator: document.getElementById('loadingIndicator'),
-      promptSelect: document.getElementById('promptSelect')
+      promptSelect: document.getElementById('promptSelect'),
+      profileSelect: document.getElementById('profileSelect')
     };
 
     this.init();
@@ -53,6 +59,15 @@ class ChatWindow {
     this.elements.messageInput.addEventListener('input', () => {
       this.adjustTextareaHeight();
     });
+
+    this.elements.profileSelect?.addEventListener('change', () => {
+      const selectedId = this.elements.profileSelect.value;
+      this.selectedProfile = selectedId ? this.getProfileById(selectedId) : null;
+
+      if (this.messages.length > 0) {
+        this.saveChatHistory();
+      }
+    });
   }
 
   setupPostMessageListener() {
@@ -70,6 +85,7 @@ class ChatWindow {
 
         this.title = event.data.title || t('chat__windowTitle', '1');
         this.promptId = event.data.promptId || null;
+        this.profileId = event.data.profileId || null;
 
         if (event.data.historyMessages && Array.isArray(event.data.historyMessages)) {
           this.loadHistoryMessages(event.data.historyMessages);
@@ -81,8 +97,9 @@ class ChatWindow {
           this.elements.messageInput.focus();
         }
 
-        // Load prompts after receiving chat data
-        this.loadPrompts();
+        // Load prompts and configs after receiving chat data
+        this.loadPrompts(this.promptId);
+        this.loadApiProfiles(this.profileId);
 
         window.addEventListener('message', (e) => {
           if (e.data.type === 'UPDATE_TITLE' && e.data.windowId === this.windowId) {
@@ -186,7 +203,8 @@ class ChatWindow {
 
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
-        messages: requestMessages
+        messages: requestMessages,
+        profileId: this.selectedProfile?.id || null
       });
 
       if (response.success) {
@@ -241,6 +259,7 @@ class ChatWindow {
 
   async saveChatHistory() {
     try {
+      if (!this.chatId) return;
       const result = await chrome.storage.local.get(['chat_history']);
       const history = result.chat_history || [];
 
@@ -255,6 +274,7 @@ class ChatWindow {
         chatId: this.chatId,
         title: this.title,
         promptId: this.selectedPrompt?.id || '',
+        profileId: this.selectedProfile?.id || '',
         createdAt: this.chatId ? this.chatId.replace('chat-', '').replace(/-/g, ':') : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messageCount: this.messages.length,
@@ -342,6 +362,77 @@ class ChatWindow {
   getPromptById(promptId) {
     if (!promptId) return null;
     return this.prompts.find(p => p.id === promptId) || null;
+  }
+
+  // ===== Config (API Profile) Functions =====
+
+  async loadApiProfiles(historyProfileId = null) {
+    try {
+      const result = await chrome.storage.local.get(['apiProfiles', 'activeApiProfileId']);
+      this.apiProfiles = Array.isArray(result.apiProfiles) ? result.apiProfiles : [];
+      const activeProfileId = result.activeApiProfileId || '';
+
+      let targetProfileId = null;
+
+      if (historyProfileId) {
+        const exists = this.apiProfiles.some(p => p.id === historyProfileId);
+        if (exists) {
+          targetProfileId = historyProfileId;
+        }
+      }
+
+      // For new chats (or when history profile was deleted), use global default if set
+      if (!targetProfileId && activeProfileId) {
+        const exists = this.apiProfiles.some(p => p.id === activeProfileId);
+        if (exists) {
+          targetProfileId = activeProfileId;
+        }
+      }
+
+      if (!targetProfileId && this.apiProfiles.length > 0) {
+        targetProfileId = this.apiProfiles[0].id;
+      }
+
+      this.selectedProfile = targetProfileId ? this.getProfileById(targetProfileId) : null;
+      this.renderProfileSelect(targetProfileId);
+    } catch (error) {
+      console.error('Failed to load api profiles:', error);
+      this.apiProfiles = [];
+      this.selectedProfile = null;
+      this.renderProfileSelect(null);
+    }
+  }
+
+  renderProfileSelect(selectedId = null) {
+    const select = this.elements.profileSelect;
+    if (!select) return;
+
+    if (!Array.isArray(this.apiProfiles) || this.apiProfiles.length === 0) {
+      select.innerHTML = '<option value=""></option>';
+      select.value = '';
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = '';
+
+    this.apiProfiles.forEach((profile) => {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name || t('popup__profileNameEmpty');
+      if (profile.id === selectedId) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    select.value = selectedId || '';
+  }
+
+  getProfileById(profileId) {
+    if (!profileId) return null;
+    return this.apiProfiles.find(p => p.id === profileId) || null;
   }
 }
 

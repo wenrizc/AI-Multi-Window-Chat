@@ -12,14 +12,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'GET_CONFIG') {
-    getConfig()
+    getConfig(request.profileId || null)
       .then(config => sendResponse({ success: true, config }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
 });
 
-async function getConfig() {
+async function getConfig(profileId = null) {
   const result = await chrome.storage.local.get(STORAGE_KEYS);
   const profiles = Array.isArray(result.apiProfiles) ? result.apiProfiles : [];
 
@@ -27,7 +27,10 @@ async function getConfig() {
     throw new Error(chrome.i18n.getMessage('error__apiConfigMissing'));
   }
 
-  const profile = profiles.find(item => item.id === result.activeApiProfileId) || profiles[0];
+  let profile =
+    (profileId ? profiles.find(item => item.id === profileId) : null) ||
+    profiles.find(item => item.id === result.activeApiProfileId) ||
+    profiles[0];
 
   if (!profile.apiKey || !profile.modelName) {
     throw new Error(chrome.i18n.getMessage('error__apiConfigMissing'));
@@ -41,8 +44,8 @@ async function getConfig() {
 }
 
 async function handleChatRequest(request) {
-  const { messages } = request;
-  const config = await getConfig();
+  const { messages, profileId } = request;
+  const config = await getConfig(profileId);
 
   const client = new OpenAI({
     apiKey: config.apiKey,

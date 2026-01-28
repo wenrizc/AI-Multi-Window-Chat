@@ -1148,6 +1148,7 @@ async function viewChat(chat) {
       chatId: chat.chatId,
       title: chat.title,
       promptId: chat.promptId || null,
+      profileId: chat.profileId || null,
       messages: chat.messages.map(msg => ({
         role: msg.role,
         content: msg.content
