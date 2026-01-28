@@ -295,6 +295,22 @@
     "message": "AI",
     "description": "AI 角色"
   },
+  "chat__btnCopyMessage": {
+    "message": "??",
+    "description": "??????"
+  },
+  "chat__toastCopied": {
+    "message": "???",
+    "description": "??????"
+  },
+  "chat__toastCopiedLast": {
+    "message": "???????",
+    "description": "????????"
+  },
+  "chat__toastCopyFailed": {
+    "message": "????",
+    "description": "??????"
+  },
   "content__toolbarChat": {
     "message": "在新的对话窗口中讨论",
     "description": "工具栏提示"

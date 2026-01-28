@@ -295,6 +295,22 @@
     "message": "AI",
     "description": "AI role"
   },
+  "chat__btnCopyMessage": {
+    "message": "Copy",
+    "description": "Copy message button"
+  },
+  "chat__toastCopied": {
+    "message": "Copied",
+    "description": "Copy success toast"
+  },
+  "chat__toastCopiedLast": {
+    "message": "Latest message copied",
+    "description": "Copy latest message toast"
+  },
+  "chat__toastCopyFailed": {
+    "message": "Copy failed",
+    "description": "Copy failure toast"
+  },
   "content__toolbarChat": {
     "message": "Discuss in a new chat window",
     "description": "Toolbar tooltip"

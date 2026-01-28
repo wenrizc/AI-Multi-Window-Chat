@@ -49,6 +49,14 @@ class ChatWindow {
       this.sendMessage();
     });
 
+    document.addEventListener('keydown', (e) => {
+      // Alt + C: copy latest assistant message (fallback to latest message)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key?.toLowerCase() === 'c') {
+        e.preventDefault();
+        this.copyLatestMessage();
+      }
+    });
+
     this.elements.messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -157,7 +165,89 @@ class ChatWindow {
     messageEl.appendChild(messageHeader);
     messageEl.appendChild(messageContent);
 
+    const messageFooter = document.createElement('div');
+    messageFooter.className = 'message-footer';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'message-copy-btn';
+    copyBtn.setAttribute('aria-label', t('chat__btnCopyMessage'));
+    copyBtn.innerHTML = `
+      <svg class="message-copy-icon message-copy-icon-copy" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+      </svg>
+      <svg class="message-copy-icon message-copy-icon-check" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/>
+      </svg>
+    `;
+
+    copyBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await this.copyTextWithFeedback(msg.content, copyBtn);
+    });
+
+    messageFooter.appendChild(copyBtn);
+    messageEl.appendChild(messageFooter);
+
     return messageEl;
+  }
+
+  getLatestCopyText() {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i];
+      if (!msg || typeof msg.content !== 'string') continue;
+      if (msg.role === 'assistant') return msg.content;
+    }
+
+    const last = this.messages[this.messages.length - 1];
+    return last?.content || '';
+  }
+
+  async copyLatestMessage() {
+    const text = this.getLatestCopyText();
+    if (!text) return;
+    await this.copyTextWithFeedback(text, null);
+  }
+
+  async copyTextWithFeedback(text, btn = null) {
+    const ok = await this.copyToClipboard(text);
+    if (!ok) return;
+
+    if (btn) {
+      btn.dataset.copied = 'true';
+      clearTimeout(btn._copiedTimer);
+      btn._copiedTimer = setTimeout(() => {
+        btn.dataset.copied = 'false';
+      }, 1200);
+    }
+  }
+
+  async copyToClipboard(text) {
+    if (typeof text !== 'string') return false;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      // Fallback for older browsers / blocked clipboard API
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        return ok;
+      } catch (e) {
+        return false;
+      }
+    }
   }
 
   adjustTextareaHeight() {
