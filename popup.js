@@ -1151,7 +1151,9 @@ async function viewChat(chat) {
       profileId: chat.profileId || null,
       messages: chat.messages.map(msg => ({
         role: msg.role,
-        content: msg.content
+        content: msg.content,
+        timestamp: msg.timestamp || null,
+        tokenUsage: msg.tokenUsage || msg.usage || null
       }))
     }, (response) => {
       if (chrome.runtime.lastError) {

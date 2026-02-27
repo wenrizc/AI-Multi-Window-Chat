@@ -121,15 +121,17 @@ class ChatWindow {
 
   loadHistoryMessages(historyMessages) {
     historyMessages.forEach(msg => {
-      this.removeWelcomeMessage();
-      const messageEl = this.createMessageElement(msg);
-      this.elements.messagesContainer.appendChild(messageEl);
-
-      this.messages.push({
+      const normalizedMessage = {
         role: msg.role,
-        content: msg.content,
-        timestamp: msg.timestamp || null
-      });
+        content: typeof msg.content === 'string' ? msg.content : '',
+        timestamp: msg.timestamp || null,
+        tokenUsage: this.normalizeTokenUsage(msg.tokenUsage || msg.usage || null)
+      };
+
+      this.removeWelcomeMessage();
+      const messageEl = this.createMessageElement(normalizedMessage);
+      this.elements.messagesContainer.appendChild(messageEl);
+      this.messages.push(normalizedMessage);
     });
 
     this.scrollToBottom();
@@ -167,6 +169,14 @@ class ChatWindow {
 
     const messageFooter = document.createElement('div');
     messageFooter.className = 'message-footer';
+
+    const tokenUsageText = this.buildTokenUsageText(msg.tokenUsage || msg.usage || null);
+    if (tokenUsageText) {
+      const usageEl = document.createElement('div');
+      usageEl.className = 'message-token-usage';
+      usageEl.textContent = tokenUsageText;
+      messageFooter.appendChild(usageEl);
+    }
 
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
@@ -278,7 +288,7 @@ class ChatWindow {
 
     try {
       // Build request messages
-      let requestMessages = [];
+      const requestMessages = [];
 
       // Add system message if prompt is selected
       if (this.selectedPrompt && this.selectedPrompt.content) {
@@ -289,7 +299,12 @@ class ChatWindow {
       }
 
       // Add conversation history
-      requestMessages = requestMessages.concat(this.messages);
+      requestMessages.push(
+        ...this.messages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }))
+      );
 
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
@@ -298,7 +313,8 @@ class ChatWindow {
       });
 
       if (response.success) {
-        this.addMessage('assistant', response.data);
+        const assistantResponse = this.normalizeAssistantResponse(response.data);
+        this.addMessage('assistant', assistantResponse.content, assistantResponse.tokenUsage);
         await this.saveChatHistory();
       } else {
         this.addMessage('assistant', `❌ ${response.error}`);
@@ -311,12 +327,18 @@ class ChatWindow {
     }
   }
 
-  addMessage(role, content) {
+  addMessage(role, content, tokenUsage = null) {
     const message = {
       role,
-      content,
+      content: typeof content === 'string' ? content : String(content ?? ''),
       timestamp: new Date().toISOString()
     };
+
+    const normalizedTokenUsage = this.normalizeTokenUsage(tokenUsage);
+    if (normalizedTokenUsage) {
+      message.tokenUsage = normalizedTokenUsage;
+    }
+
     this.messages.push(message);
 
     this.removeWelcomeMessage();
@@ -345,6 +367,82 @@ class ChatWindow {
   // Parse markdown content for assistant messages
   formatMessage(content) {
     return marked.parse(content);
+  }
+
+  normalizeAssistantResponse(data) {
+    if (typeof data === 'string') {
+      return {
+        content: data,
+        tokenUsage: null
+      };
+    }
+
+    if (!data || typeof data !== 'object') {
+      return {
+        content: '',
+        tokenUsage: null
+      };
+    }
+
+    return {
+      content: typeof data.content === 'string' ? data.content : '',
+      tokenUsage: this.normalizeTokenUsage(data.tokenUsage || data.usage || null)
+    };
+  }
+
+  normalizeTokenUsage(rawUsage) {
+    if (!rawUsage || typeof rawUsage !== 'object') {
+      return null;
+    }
+
+    const promptTokens = this.toTokenCount(rawUsage.promptTokens ?? rawUsage.prompt_tokens ?? rawUsage.input_tokens);
+    const completionTokens = this.toTokenCount(rawUsage.completionTokens ?? rawUsage.completion_tokens ?? rawUsage.output_tokens);
+    const totalTokens = this.toTokenCount(
+      rawUsage.totalTokens ??
+      rawUsage.total_tokens ??
+      ((promptTokens !== null && completionTokens !== null) ? promptTokens + completionTokens : null)
+    );
+
+    if (promptTokens === null && completionTokens === null && totalTokens === null) {
+      return null;
+    }
+
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens
+    };
+  }
+
+  toTokenCount(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+
+    const normalized = Math.floor(parsed);
+    return normalized >= 0 ? normalized : null;
+  }
+
+  buildTokenUsageText(rawUsage) {
+    const usage = this.normalizeTokenUsage(rawUsage);
+    if (!usage) return '';
+
+    const chunks = [];
+
+    if (usage.promptTokens !== null) {
+      chunks.push(t('chat__tokenInput', usage.promptTokens));
+    }
+
+    if (usage.completionTokens !== null) {
+      chunks.push(t('chat__tokenOutput', usage.completionTokens));
+    }
+
+    return chunks.join(' | ');
   }
 
   async saveChatHistory() {

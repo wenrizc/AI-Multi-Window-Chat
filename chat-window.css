@@ -125,8 +125,16 @@ body {
 
 .message-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   margin-top: 4px;
+}
+
+.message-token-usage {
+  margin-right: auto;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #737373;
 }
 
 .message-copy-btn {

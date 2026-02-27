@@ -63,12 +63,53 @@ async function handleChatRequest(request) {
     throw new Error(chrome.i18n.getMessage('error__emptyApiResponse'));
   }
 
-  return content;
+  return {
+    content,
+    usage: normalizeUsage(data?.usage)
+  };
 }
 
 // Remove trailing slash to ensure consistent URL formatting
 function normalizeBaseUrl(apiUrl) {
   if (!apiUrl) return undefined;
   return apiUrl.replace(/\/$/, '');
+}
+
+function normalizeUsage(usage) {
+  if (!usage || typeof usage !== 'object') {
+    return null;
+  }
+
+  const promptTokens = toTokenCount(usage.prompt_tokens ?? usage.input_tokens);
+  const completionTokens = toTokenCount(usage.completion_tokens ?? usage.output_tokens);
+
+  const totalTokens = toTokenCount(
+    usage.total_tokens ??
+    ((promptTokens !== null && completionTokens !== null) ? promptTokens + completionTokens : null)
+  );
+
+  if (promptTokens === null && completionTokens === null && totalTokens === null) {
+    return null;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens
+  };
+}
+
+function toTokenCount(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const normalized = Math.floor(parsed);
+  return normalized >= 0 ? normalized : null;
 }
 

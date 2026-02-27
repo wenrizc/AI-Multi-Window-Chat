@@ -295,6 +295,14 @@
     "message": "AI",
     "description": "AI role"
   },
+  "chat__tokenInput": {
+    "message": "Input: $1 tokens",
+    "description": "Prompt/input token count for assistant message"
+  },
+  "chat__tokenOutput": {
+    "message": "Output: $1 tokens",
+    "description": "Completion/output token count for assistant message"
+  },
   "chat__btnCopyMessage": {
     "message": "Copy",
     "description": "Copy message button"

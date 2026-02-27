@@ -295,21 +295,29 @@
     "message": "AI",
     "description": "AI 角色"
   },
+  "chat__tokenInput": {
+    "message": "输入: $1 tokens",
+    "description": "助手消息的提示/输入 token 计数"
+  },
+  "chat__tokenOutput": {
+    "message": "输出: $1 tokens",
+    "description": "助手消息的完成/输出 token 计数"
+  },
   "chat__btnCopyMessage": {
-    "message": "??",
-    "description": "??????"
+    "message": "复制",
+    "description": "复制消息按钮"
   },
   "chat__toastCopied": {
-    "message": "???",
-    "description": "??????"
+    "message": "已复制",
+    "description": "复制成功提示"
   },
   "chat__toastCopiedLast": {
-    "message": "???????",
-    "description": "????????"
+    "message": "最新消息已复制",
+    "description": "复制最新消息提示"
   },
   "chat__toastCopyFailed": {
-    "message": "????",
-    "description": "??????"
+    "message": "复制失败",
+    "description": "复制失败提示"
   },
   "content__toolbarChat": {
     "message": "在新的对话窗口中讨论",
