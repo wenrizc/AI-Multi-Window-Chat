@@ -28,16 +28,18 @@
   "scripts": {
     "build": "node build.mjs --release",
     "build:watch": "node build.mjs --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:website": "node scripts/build-website.mjs",
+    "test": "node test/run-tests.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.20.2"
+    "@types/chrome": "^0.1.42",
+    "@types/node": "^25.9.0",
+    "esbuild": "^0.20.2",
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "katex": "^0.16.27",
     "marked": "^17.0.1",
-    "marked-katex-extension": "^5.1.6",
-    "openai": "^4.0.0",
-    "remove-markdown": "^0.5.0"
+    "marked-katex-extension": "^5.1.6"
   }
 }

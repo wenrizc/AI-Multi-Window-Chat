@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Multi-Window Settings</title>
+  <title data-i18n="popup__pageTitle">AI Multi-Window Settings</title>
   <style>
     * {
       margin: 0;
@@ -622,7 +622,8 @@
   </div>
 
   <div class="tabs">
-    <button class="tab active" data-tab="config" data-i18n="popup__tabConfig">Config</button>
+    <button class="tab active" data-tab="config" data-i18n="popup__tabLLM">LLM</button>
+    <button class="tab" data-tab="search" data-i18n="popup__tabSearch">Search</button>
     <button class="tab" data-tab="prompts" data-i18n="popup__tabPrompts">Prompts</button>
     <button class="tab" data-tab="history" data-i18n="popup__tabHistory">History</button>
   </div>
@@ -672,6 +673,35 @@
           <input type="text" id="modelName" />
         </div>
 
+        <div class="input-group">
+          <label for="transportSelect" data-i18n="popup__labelTransport">Transport</label>
+          <select id="transportSelect">
+            <option value="chat_completions" data-i18n="popup__transportChatCompletions">Chat Completions</option>
+            <option value="responses" data-i18n="popup__transportResponses">Responses</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label for="reasoningFormatSelect" data-i18n="popup__labelReasoningFormat">Reasoning Format</label>
+          <select id="reasoningFormatSelect">
+            <option value="none" data-i18n="popup__reasoningFormatNone">None</option>
+            <option value="openai_summary" data-i18n="popup__reasoningFormatOpenAISummary">OpenAI Summary</option>
+            <option value="reasoning_content" data-i18n="popup__reasoningFormatReasoningContent">reasoning_content</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>
+            <input type="checkbox" id="supportsStreamingCheckbox" checked />
+            <span data-i18n="popup__supportsStreaming">Supports Streaming</span>
+          </label>
+        </div>
+
+        <div class="input-group">
+          <label for="temperatureInput" data-i18n="popup__labelDefaultTemperature">Default Temperature</label>
+          <input type="text" id="temperatureInput" />
+        </div>
+
         <div class="action-row">
           <button id="testBtn" class="btn btn-secondary" data-i18n="popup__btnTestConnection">Test</button>
           <button id="setActiveBtn" class="btn btn-secondary" data-i18n="popup__btnSetActive">Set Current</button>
@@ -679,6 +709,58 @@
           <button id="deleteBtn" class="btn btn-danger" data-i18n="popup__btnDeleteProfile">Delete</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="searchTab">
+    <div id="searchStatus" class="status"></div>
+
+    <div class="input-group">
+      <label for="tavilyApiKey" data-i18n="popup__labelTavilyApiKey">Tavily API Key</label>
+      <input type="password" id="tavilyApiKey" />
+    </div>
+
+    <div class="input-group">
+      <label for="searchDepthSelect" data-i18n="popup__labelSearchDepth">Search Depth</label>
+      <select id="searchDepthSelect">
+        <option value="basic" data-i18n="popup__searchDepthBasic">Basic</option>
+        <option value="advanced" data-i18n="popup__searchDepthAdvanced">Advanced</option>
+      </select>
+    </div>
+
+    <div class="input-group">
+      <label for="timeRangeSelect" data-i18n="popup__labelTimeRange">Time Range</label>
+      <select id="timeRangeSelect">
+        <option value="" data-i18n="popup__timeRangeAll">All Time</option>
+        <option value="day" data-i18n="popup__timeRangeDay">Past Day</option>
+        <option value="week" data-i18n="popup__timeRangeWeek">Past Week</option>
+        <option value="month" data-i18n="popup__timeRangeMonth">Past Month</option>
+        <option value="year" data-i18n="popup__timeRangeYear">Past Year</option>
+      </select>
+    </div>
+
+    <div class="input-group">
+      <label for="maxResultsInput" data-i18n="popup__labelMaxSearchResults">Max Search Results</label>
+      <input type="text" id="maxResultsInput" value="5" />
+    </div>
+
+    <div class="input-group">
+      <label for="maxRoundsInput" data-i18n="popup__labelMaxSearchRounds">Max Search Rounds</label>
+      <input type="text" id="maxRoundsInput" value="1" />
+    </div>
+
+    <div class="input-group">
+      <label>
+        <input type="checkbox" id="searchEnabledByDefaultCheckbox" />
+        <span data-i18n="popup__searchEnabledByDefault">Search Enabled By Default</span>
+      </label>
+    </div>
+
+    <div class="input-group">
+      <label>
+        <input type="checkbox" id="defaultStreamingCheckbox" checked />
+        <span data-i18n="popup__defaultStreamingEnabled">Streaming Enabled By Default</span>
+      </label>
     </div>
   </div>
 
@@ -777,7 +859,6 @@
   </div>
 
   <script src="i18n.js"></script>
-  <script src="vendor/remove-markdown.js"></script>
-  <script src="popup.js"></script>
+  <script src="dist/popup.js"></script>
 </body>
 </html>

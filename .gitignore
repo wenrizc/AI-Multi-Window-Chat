@@ -1,5 +1,7 @@
 node_modules/
 .claude
+repo/
 dist/
 release/
+.tmp-tests/
 .idea

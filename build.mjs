@@ -18,24 +18,48 @@ const releaseDir = path.join(rootDir, 'release');
 
 const buildOptions = [
   {
-    entryPoints: [path.join(rootDir, 'background.js')],
+    entryPoints: [path.join(rootDir, 'src', 'background', 'index.ts')],
     bundle: true,
     format: 'esm',
     platform: 'browser',
     target: 'es2020',
     outfile: path.join(distDir, 'background.js'),
     sourcemap: true,
-    legalComments: 'inline'
+    legalComments: 'inline',
+    loader: { '.ts': 'ts' }
   },
   {
-    entryPoints: [path.join(rootDir, 'chat-window.js')],
+    entryPoints: [path.join(rootDir, 'src', 'chat', 'index.ts')],
     bundle: true,
     format: 'iife',
     platform: 'browser',
     target: 'es2020',
     outfile: path.join(distDir, 'chat-window.js'),
     sourcemap: true,
-    legalComments: 'inline'
+    legalComments: 'inline',
+    loader: { '.ts': 'ts' }
+  },
+  {
+    entryPoints: [path.join(rootDir, 'src', 'popup', 'index.ts')],
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2020',
+    outfile: path.join(distDir, 'popup.js'),
+    sourcemap: true,
+    legalComments: 'inline',
+    loader: { '.ts': 'ts' }
+  },
+  {
+    entryPoints: [path.join(rootDir, 'src', 'content', 'index.ts')],
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2020',
+    outfile: path.join(distDir, 'content.js'),
+    sourcemap: true,
+    legalComments: 'inline',
+    loader: { '.ts': 'ts' }
   }
 ];
 
@@ -115,13 +139,10 @@ async function prepareRelease() {
   const filesToCopy = [
     'manifest.json',
     'popup.html',
-    'popup.js',
     'chat-window.html',
     'chat-window.css',
     'styles.css',
     'i18n.js',
-    'content.js',
-    'vendor/remove-markdown.js',
     'LICENSE',
     'THIRD_PARTY_LICENSES.md'
   ];
@@ -198,8 +219,6 @@ async function validateRelease() {
   }
 
   const referencedFiles = collectManifestFiles(manifest);
-  referencedFiles.add('popup.js');
-
   const missing = [];
   for (const relPath of referencedFiles) {
     if (isGlob(relPath)) {

@@ -15,7 +15,7 @@
   "content_scripts": [
     {
       "matches": ["https://*/*", "http://*/*"],
-      "js": ["i18n.js", "content.js"],
+      "js": ["i18n.js", "dist/content.js"],
       "css": ["styles.css"],
       "run_at": "document_end"
     }
@@ -29,6 +29,8 @@
       "resources": [
         "chat-window.html",
         "dist/chat-window.js",
+        "dist/content.js",
+        "dist/popup.js",
         "dist/katex/katex.min.css",
         "dist/katex/fonts/*",
         "chat-window.css",

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Chat Window</title>
+  <title data-i18n="chat__windowPageTitle">AI Chat Window</title>
   <link rel="stylesheet" href="dist/katex/katex.min.css">
   <link rel="stylesheet" href="chat-window.css">
 </head>
@@ -17,16 +17,40 @@
       </div>
     </div>
 
-    <div class="prompt-selector">
-      <div class="selector-grid">
-        <select id="promptSelect">
-          <option value="" data-i18n="prompt__noPrompt">No Prompt</option>
-        </select>
-
-        <select id="profileSelect" data-i18n-title="chat__btnSwitchConfig" title="Switch Config">
-          <option value=""></option>
-        </select>
+    <div class="chat-settings-panel" id="settingsPanel" hidden>
+      <div class="chat-settings-grid">
+        <label class="chat-settings-field">
+          <span class="chat-settings-label" data-i18n="chat__settingsModel">Model</span>
+          <select id="profileSelect" data-i18n-title="chat__btnSwitchConfig" title="Switch Config">
+            <option value=""></option>
+          </select>
+        </label>
+        <label class="chat-settings-field">
+          <span class="chat-settings-label" data-i18n="chat__settingsPrompt">Prompt</span>
+          <select id="promptSelect">
+            <option value="" data-i18n="prompt__noPrompt">No Prompt</option>
+          </select>
+        </label>
+        <label class="chat-settings-toggle" for="searchToggle">
+          <input type="checkbox" id="searchToggle">
+          <span class="chat-settings-toggle-copy">
+            <span class="chat-settings-label" data-i18n="chat__settingsSearch">Search</span>
+            <span class="chat-settings-value" data-i18n="chat__searchToggle">Web Search</span>
+          </span>
+        </label>
+        <label class="chat-settings-toggle" for="streamingToggle">
+          <input type="checkbox" id="streamingToggle">
+          <span class="chat-settings-toggle-copy">
+            <span class="chat-settings-label" data-i18n="chat__settingsStreaming">Response</span>
+            <span class="chat-settings-value" data-i18n="chat__streamingToggle">Streaming</span>
+          </span>
+        </label>
       </div>
+    </div>
+
+    <div class="chat-status-bar">
+      <div id="statusText" class="chat-status-text" data-i18n="chat__statusIdle">Idle</div>
+      <button id="stopBtn" class="stop-btn" type="button" data-i18n="chat__btnStop">Stop</button>
     </div>
 
     <div class="input-container">

@@ -461,10 +461,6 @@
     "message": "Search Enabled By Default",
     "description": "Search enabled by default checkbox"
   },
-  "popup__defaultStreamingEnabled": {
-    "message": "Streaming Enabled By Default",
-    "description": "Streaming enabled by default checkbox"
-  },
   "popup__emptyProviders": {
     "message": "No providers yet.",
     "description": "Empty providers list message"
@@ -501,68 +497,12 @@
     "message": "AI Chat",
     "description": "AI Chat toolbar button label"
   },
-  "content__btnSettings": {
-    "message": "Settings",
-    "description": "Settings button in chat window header"
-  },
-  "content__btnMinimize": {
-    "message": "Minimize",
-    "description": "Minimize button in chat window header"
-  },
-  "content__btnClose": {
-    "message": "Close",
-    "description": "Close button in chat window header"
-  },
   "content__aiChatTitle": {
     "message": "AI Chat $number$",
     "description": "Default window title for content script chat windows",
     "placeholders": {
       "number": { "content": "$1" }
     }
-  },
-  "chat__settingsModel": {
-    "message": "Model",
-    "description": "Label for model selector in chat settings panel"
-  },
-  "chat__settingsPrompt": {
-    "message": "Prompt",
-    "description": "Label for prompt selector in chat settings panel"
-  },
-  "chat__settingsSearch": {
-    "message": "Search",
-    "description": "Label for search toggle in chat settings panel"
-  },
-  "chat__settingsStreaming": {
-    "message": "Response",
-    "description": "Label for streaming toggle in chat settings panel"
-  },
-  "chat__streamingToggle": {
-    "message": "Streaming",
-    "description": "Streaming toggle text in chat settings panel"
-  },
-  "chat__toolCalls": {
-    "message": "Tool Calls",
-    "description": "Title for tool call results panel"
-  },
-  "chat__toolStatusPending": {
-    "message": "Waiting",
-    "description": "Pending tool status label"
-  },
-  "chat__toolStatusDone": {
-    "message": "Done",
-    "description": "Finished tool panel summary label"
-  },
-  "chat__toolStatusCompleted": {
-    "message": "Completed",
-    "description": "Completed tool call label"
-  },
-  "chat__toolStatusFailed": {
-    "message": "Failed",
-    "description": "Failed tool call label"
-  },
-  "chat__toolWaiting": {
-    "message": "Waiting for tool result...",
-    "description": "Pending tool output text"
   },
   "usage__unavailable": {
     "message": "Usage unavailable",

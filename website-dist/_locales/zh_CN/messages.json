@@ -461,10 +461,6 @@
     "message": "默认开启搜索",
     "description": "默认开启搜索复选框"
   },
-  "popup__defaultStreamingEnabled": {
-    "message": "默认开启流式响应",
-    "description": "默认开启流式响应复选框"
-  },
   "popup__emptyProviders": {
     "message": "还没有模型配置。",
     "description": "空 provider 列表消息"
@@ -501,68 +497,12 @@
     "message": "AI 对话",
     "description": "AI 对话工具栏按钮标签"
   },
-  "content__btnSettings": {
-    "message": "设置",
-    "description": "聊天窗口标题栏设置按钮"
-  },
-  "content__btnMinimize": {
-    "message": "收起",
-    "description": "聊天窗口标题栏收起按钮"
-  },
-  "content__btnClose": {
-    "message": "关闭",
-    "description": "聊天窗口标题栏关闭按钮"
-  },
   "content__aiChatTitle": {
     "message": "AI 对话 $number$",
     "description": "内容脚本对话窗口的默认标题",
     "placeholders": {
       "number": { "content": "$1" }
     }
-  },
-  "chat__settingsModel": {
-    "message": "模型",
-    "description": "聊天设置面板中的模型选择标签"
-  },
-  "chat__settingsPrompt": {
-    "message": "提示词",
-    "description": "聊天设置面板中的提示词选择标签"
-  },
-  "chat__settingsSearch": {
-    "message": "搜索",
-    "description": "聊天设置面板中的搜索开关标签"
-  },
-  "chat__settingsStreaming": {
-    "message": "响应",
-    "description": "聊天设置面板中的流式响应标签"
-  },
-  "chat__streamingToggle": {
-    "message": "流式响应",
-    "description": "聊天设置面板中的流式响应开关文案"
-  },
-  "chat__toolCalls": {
-    "message": "工具调用",
-    "description": "工具调用面板标题"
-  },
-  "chat__toolStatusPending": {
-    "message": "等待中",
-    "description": "等待中的工具调用状态"
-  },
-  "chat__toolStatusDone": {
-    "message": "已完成",
-    "description": "工具调用面板完成状态"
-  },
-  "chat__toolStatusCompleted": {
-    "message": "完成",
-    "description": "单个工具调用完成状态"
-  },
-  "chat__toolStatusFailed": {
-    "message": "失败",
-    "description": "单个工具调用失败状态"
-  },
-  "chat__toolWaiting": {
-    "message": "等待工具返回结果...",
-    "description": "工具调用等待中的输出提示"
   },
   "usage__unavailable": {
     "message": "暂无用量信息",
