@@ -712,6 +712,21 @@ function runSettingsSurfaceLayoutTests() {
     'Saving a provider should persist the per-model context window setting.'
   );
   assert.match(
+    popupTs,
+    /exportPayload\(format,\s*'providers-v2',\s*\{[\s\S]*providers:\s*this\.store\.providers,[\s\S]*defaultProviderId:\s*this\.store\.featureSettings\.defaultProviderId,[\s\S]*search:\s*this\.store\.featureSettings\.search[\s\S]*\}\);/s,
+    'Provider exports should include the default provider and Tavily search settings alongside the provider list.'
+  );
+  assert.match(
+    popupTs,
+    /this\.store\.featureSettings\.defaultProviderId\s*=\s*resolveImportedDefaultProviderId\(/,
+    'Provider imports should restore the exported default provider selection.'
+  );
+  assert.match(
+    popupTs,
+    /this\.store\.featureSettings\.search\s*=\s*normalizeImportedSearchSettings\(/,
+    'Provider imports should restore Tavily search settings from imported provider configuration.'
+  );
+  assert.match(
     chatTs,
     /model\?\.supportsStreaming/,
     'Chat settings should still default session streaming from the model configuration.'

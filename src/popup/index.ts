@@ -3,7 +3,8 @@ import type {
   FeatureSettings,
   PromptConfig,
   ProviderConfig,
-  RootStore
+  RootStore,
+  SearchSettings
 } from '../shared/types';
 import {
   clampSearchRounds,
@@ -20,6 +21,12 @@ import {
 
 type TabName = 'config' | 'search' | 'prompts' | 'history';
 type OnboardingPresetId = 'openai' | 'deepseek' | 'qwen';
+type ProviderImportPayload = {
+  providers?: ProviderConfig[];
+  defaultProviderId?: string | null;
+  search?: Partial<SearchSettings> | null;
+  featureSettings?: Partial<FeatureSettings> | null;
+};
 
 const ONBOARDING_PRESETS: Record<OnboardingPresetId, {
   name: string;
@@ -595,15 +602,17 @@ class PopupApp {
     if (!file) return;
     const text = await file.text();
     elements.importProfilesInput.value = '';
-    const parsed = parseImportPayload(text) as { providers?: ProviderConfig[]; featureSettings?: FeatureSettings };
+    const parsed = parseImportPayload(text) as ProviderImportPayload;
     if (Array.isArray(parsed.providers)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
         this.store.providers = parsed.providers ? [...parsed.providers] : [];
-        if (parsed.featureSettings) {
-          this.store.featureSettings = parsed.featureSettings;
-        }
+        this.store.featureSettings.defaultProviderId = resolveImportedDefaultProviderId(parsed, this.store.providers);
+        this.store.featureSettings.search = normalizeImportedSearchSettings(
+          parsed.search ?? parsed.featureSettings?.search,
+          this.store.featureSettings.search
+        );
         this.enforceFixedDefaults();
-        this.selectedProviderId = this.store.providers[0]?.id ?? null;
+        this.selectedProviderId = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? null;
         await this.persist();
         this.showStatus(
           elements.status,
@@ -806,7 +815,8 @@ class PopupApp {
     if (this.currentExportTarget === 'providers') {
       this.exportPayload(format, 'providers-v2', {
         providers: this.store.providers,
-        featureSettings: this.store.featureSettings
+        defaultProviderId: this.store.featureSettings.defaultProviderId,
+        search: this.store.featureSettings.search
       });
       this.closeModal('exportModal');
       this.showStatus(elements.status, t('history__successExported'), 'success');
@@ -908,6 +918,40 @@ function parseImportPayload(text: string): unknown {
   }
 
   throw new Error('Unsupported import format.');
+}
+
+function resolveImportedDefaultProviderId(parsed: ProviderImportPayload, providers: ProviderConfig[]): string | null {
+  const importedDefaultProviderId = parsed.defaultProviderId ?? parsed.featureSettings?.defaultProviderId ?? null;
+  if (importedDefaultProviderId && providers.some((provider) => provider.id === importedDefaultProviderId)) {
+    return importedDefaultProviderId;
+  }
+  return providers[0]?.id ?? null;
+}
+
+function normalizeImportedSearchSettings(
+  input: Partial<SearchSettings> | null | undefined,
+  fallback: SearchSettings
+): SearchSettings {
+  const candidate = isRecord(input) ? input : {};
+  const timeRange = candidate.timeRange;
+  const normalizedTimeRange = timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year'
+    ? timeRange
+    : fallback.timeRange;
+
+  return {
+    tavilyApiKey: typeof candidate.tavilyApiKey === 'string' ? candidate.tavilyApiKey.trim() : fallback.tavilyApiKey,
+    enabledByDefault: false,
+    searchDepth: candidate.searchDepth === 'advanced' || candidate.searchDepth === 'basic'
+      ? candidate.searchDepth
+      : fallback.searchDepth,
+    timeRange: normalizedTimeRange,
+    maxResults: Math.max(1, toNullableInt(candidate.maxResults) ?? fallback.maxResults),
+    maxRounds: clampSearchRounds(toNullableInt(candidate.maxRounds) ?? fallback.maxRounds)
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function getErrorText(error: unknown): string {

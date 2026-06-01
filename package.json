@@ -32,9 +32,11 @@
     "test": "node test/run-tests.mjs"
   },
   "devDependencies": {
+    "@copilotkit/aimock": "^1.27.3",
     "@types/chrome": "^0.1.42",
     "@types/node": "^25.9.0",
     "esbuild": "^0.20.2",
+    "msw": "^2.14.6",
     "typescript": "^6.0.3"
   },
   "dependencies": {
