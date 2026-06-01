@@ -6,6 +6,7 @@ import type {
   RootStore,
   SearchSettings
 } from '../shared/types';
+import { mergePromptsForImport, mergeProvidersForImport } from '../shared/imports';
 import {
   clampSearchRounds,
   compactText,
@@ -605,8 +606,13 @@ class PopupApp {
     const parsed = parseImportPayload(text) as ProviderImportPayload;
     if (Array.isArray(parsed.providers)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
-        this.store.providers = parsed.providers ? [...parsed.providers] : [];
-        this.store.featureSettings.defaultProviderId = resolveImportedDefaultProviderId(parsed, this.store.providers);
+        const result = mergeProvidersForImport(this.store.providers, parsed.providers ?? []);
+        this.store.providers = result.providers;
+        this.store.featureSettings.defaultProviderId = resolveImportedDefaultProviderId(
+          parsed,
+          this.store.providers,
+          this.store.featureSettings.defaultProviderId
+        );
         this.store.featureSettings.search = normalizeImportedSearchSettings(
           parsed.search ?? parsed.featureSettings?.search,
           this.store.featureSettings.search
@@ -617,8 +623,8 @@ class PopupApp {
         this.showStatus(
           elements.status,
           t('config__statusImported', {
-            addedCount: String(this.store.providers.length),
-            updatedCount: '0'
+            addedCount: String(result.addedCount),
+            updatedCount: String(result.updatedCount)
           }),
           'success'
         );
@@ -707,15 +713,20 @@ class PopupApp {
     elements.importPromptsInput.value = '';
     if (Array.isArray(parsed.prompts)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
-        this.store.prompts = parsed.prompts ? [...parsed.prompts] : [];
-        this.store.featureSettings.defaultPromptId = parsed.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
-        this.selectedPromptId = this.store.prompts[0]?.id ?? null;
+        const result = mergePromptsForImport(this.store.prompts, parsed.prompts ?? []);
+        this.store.prompts = result.prompts;
+        this.store.featureSettings.defaultPromptId = resolveImportedPromptId(
+          parsed.defaultPromptId ?? null,
+          this.store.prompts,
+          this.store.featureSettings.defaultPromptId
+        );
+        this.selectedPromptId = this.store.featureSettings.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
         await this.persist();
         this.showStatus(
           elements.promptStatus,
           t('config__statusImported', {
-            addedCount: String(this.store.prompts.length),
-            updatedCount: '0'
+            addedCount: String(result.addedCount),
+            updatedCount: String(result.updatedCount)
           }),
           'success'
         );
@@ -920,12 +931,33 @@ function parseImportPayload(text: string): unknown {
   throw new Error('Unsupported import format.');
 }
 
-function resolveImportedDefaultProviderId(parsed: ProviderImportPayload, providers: ProviderConfig[]): string | null {
+function resolveImportedDefaultProviderId(
+  parsed: ProviderImportPayload,
+  providers: ProviderConfig[],
+  fallbackProviderId: string | null
+): string | null {
   const importedDefaultProviderId = parsed.defaultProviderId ?? parsed.featureSettings?.defaultProviderId ?? null;
   if (importedDefaultProviderId && providers.some((provider) => provider.id === importedDefaultProviderId)) {
     return importedDefaultProviderId;
   }
+  if (fallbackProviderId && providers.some((provider) => provider.id === fallbackProviderId)) {
+    return fallbackProviderId;
+  }
   return providers[0]?.id ?? null;
+}
+
+function resolveImportedPromptId(
+  importedPromptId: string | null,
+  prompts: PromptConfig[],
+  fallbackPromptId: string | null
+): string | null {
+  if (importedPromptId && prompts.some((prompt) => prompt.id === importedPromptId)) {
+    return importedPromptId;
+  }
+  if (fallbackPromptId && prompts.some((prompt) => prompt.id === fallbackPromptId)) {
+    return fallbackPromptId;
+  }
+  return prompts[0]?.id ?? null;
 }
 
 function normalizeImportedSearchSettings(
