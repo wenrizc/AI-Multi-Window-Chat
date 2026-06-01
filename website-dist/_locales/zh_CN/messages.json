@@ -108,8 +108,8 @@
     "description": "确认删除配置消息（带占位符）"
   },
   "popup__confirmImportReplace": {
-    "message": "导入将替换所有现有数据，确定继续吗？",
-    "description": "确认导入替换消息"
+    "message": "导入将添加不存在的项目，并更新已存在的项目，确定继续吗？",
+    "description": "确认导入合并消息"
   },
   "popup__defaultProfileName": {
     "message": "配置 $1",
@@ -191,6 +191,70 @@
     "message": "导出成功",
     "description": "导出成功"
   },
+  "history__searchPlaceholder": {
+    "message": "搜索标题、消息或模型",
+    "description": "历史搜索输入框占位文案"
+  },
+  "history__searchNoResults": {
+    "message": "没有匹配的对话",
+    "description": "历史搜索空状态"
+  },
+  "onboarding__kicker": {
+    "message": "首次使用",
+    "description": "引导弹窗眉标题"
+  },
+  "onboarding__title": {
+    "message": "设置你的第一个 AI 窗口",
+    "description": "引导弹窗标题"
+  },
+  "onboarding__intro": {
+    "message": "选择服务商，填写 API Key 和模型名，然后测试连接。准备好后会自动打开一个示例对话。",
+    "description": "引导弹窗介绍"
+  },
+  "onboarding__stepProvider": {
+    "message": "选择服务商预设",
+    "description": "引导弹窗服务商步骤"
+  },
+  "onboarding__stepCredentials": {
+    "message": "填写 API Key 和模型",
+    "description": "引导弹窗凭据步骤"
+  },
+  "onboarding__stepLaunch": {
+    "message": "测试并启动",
+    "description": "引导弹窗启动步骤"
+  },
+  "onboarding__launchCopy": {
+    "message": "测试成功后会保存为默认配置，并在当前标签页打开一个入门对话。",
+    "description": "引导弹窗启动说明"
+  },
+  "onboarding__skip": {
+    "message": "手动设置",
+    "description": "引导弹窗跳过按钮"
+  },
+  "onboarding__saveTestLaunch": {
+    "message": "保存、测试并启动",
+    "description": "引导弹窗主按钮"
+  },
+  "onboarding__statusMissingFields": {
+    "message": "请先填写 API Key 和模型名称。",
+    "description": "引导弹窗缺少字段提示"
+  },
+  "onboarding__statusTesting": {
+    "message": "正在测试连接...",
+    "description": "引导弹窗测试中提示"
+  },
+  "onboarding__statusReady": {
+    "message": "配置已保存，示例对话已打开。",
+    "description": "引导弹窗完成提示"
+  },
+  "onboarding__statusSavedOpenFailed": {
+    "message": "配置已保存，请打开普通网页后再启动示例对话。",
+    "description": "引导弹窗保存成功但打开对话失败"
+  },
+  "onboarding__samplePrompt": {
+    "message": "你好！请给我三个在当前页面使用 AI 多窗口聊天的快速方法。",
+    "description": "引导完成后打开的示例提示词"
+  },
   "chat__welcome": {
     "message": "开始对话",
     "description": "欢迎消息"
@@ -202,10 +266,6 @@
   "chat__btnSend": {
     "message": "发送",
     "description": "发送按钮"
-  },
-  "chat__thinking": {
-    "message": "AI 正在思考...",
-    "description": "思考指示器"
   },
   "chat__inputPlaceholder": {
     "message": "输入你的问题",
@@ -337,10 +397,6 @@
     "message": "已复制",
     "description": "助手消息复制完成按钮状态"
   },
-  "chat__statusIdle": {
-    "message": "空闲",
-    "description": "空闲状态"
-  },
   "chat__statusInitFailed": {
     "message": "初始化失败：$1",
     "description": "初始化失败消息"
@@ -376,10 +432,6 @@
   "chat__statusStopped": {
     "message": "已停止",
     "description": "已停止状态"
-  },
-  "chat__statusModelNoStreaming": {
-    "message": "当前模型不支持流式响应。",
-    "description": "当前模型不支持流式响应的提示"
   },
   "chat__statusPromptUnavailable": {
     "message": "当前提示词不可用。",
@@ -441,6 +493,14 @@
     "message": "Responses",
     "description": "Responses 选项"
   },
+  "popup__transportHelp": {
+    "message": "<p><strong>Chat Completions</strong>：适合传统的 OpenAI 兼容聊天接口，这类接口通常直接接收 messages 数组。</p><p><strong>Responses</strong>：适合 OpenAI Responses API，以及较新的推理模型和工具调用工作流。</p>",
+    "description": "协议类型悬浮说明"
+  },
+  "popup__transportHelpAriaLabel": {
+    "message": "协议类型说明",
+    "description": "协议类型帮助提示的无障碍标签"
+  },
   "popup__labelReasoningFormat": {
     "message": "推理字段格式",
     "description": "推理字段格式标签"
@@ -460,6 +520,10 @@
   "popup__reasoningFormatHelp": {
     "message": "<p><strong>无</strong>：不读取单独的推理字段，普通 Chat Completions 服务大多选择这个。</p><p><strong>OpenAI 摘要</strong>：读取 OpenAI Responses API 的 reasoning summary，通常用于 OpenAI 推理模型。</p><p><strong>reasoning_content</strong>：读取额外的 reasoning_content 字段，DeepSeek、Qwen 以及部分 OpenAI 兼容服务通常选择这个。</p>",
     "description": "推理字段格式悬浮说明"
+  },
+  "popup__reasoningFormatHelpAriaLabel": {
+    "message": "推理字段格式说明",
+    "description": "推理字段格式帮助提示的无障碍标签"
   },
   "popup__supportsStreaming": {
     "message": "开启流式响应",
@@ -525,14 +589,6 @@
     "message": "不限",
     "description": "不限时间范围选项"
   },
-  "popup__searchEnabledByDefault": {
-    "message": "默认开启搜索",
-    "description": "默认开启搜索复选框"
-  },
-  "popup__defaultStreamingEnabled": {
-    "message": "默认开启流式响应",
-    "description": "默认开启流式响应复选框"
-  },
   "popup__emptyProviders": {
     "message": "还没有模型配置。",
     "description": "空 provider 列表消息"
@@ -572,6 +628,18 @@
   "content__btnSettings": {
     "message": "设置",
     "description": "聊天窗口标题栏设置按钮"
+  },
+  "content__btnDockLeft": {
+    "message": "停靠左侧",
+    "description": "将聊天窗口停靠到左半屏"
+  },
+  "content__btnDockRight": {
+    "message": "停靠右侧",
+    "description": "将聊天窗口停靠到右半屏"
+  },
+  "content__btnFullscreen": {
+    "message": "全屏",
+    "description": "聊天窗口全屏按钮"
   },
   "content__btnMinimize": {
     "message": "收起",

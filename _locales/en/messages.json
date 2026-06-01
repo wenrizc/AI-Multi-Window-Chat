@@ -108,8 +108,8 @@
     "description": "Confirm delete profile message with placeholder"
   },
   "popup__confirmImportReplace": {
-    "message": "Importing will replace all existing data. Are you sure?",
-    "description": "Confirm import replace message"
+    "message": "Importing will add missing items and update existing items. Continue?",
+    "description": "Confirm import merge message"
   },
   "popup__defaultProfileName": {
     "message": "Profile $1",
@@ -267,10 +267,6 @@
     "message": "Send",
     "description": "Send button"
   },
-  "chat__thinking": {
-    "message": "AI is thinking...",
-    "description": "Thinking indicator"
-  },
   "chat__inputPlaceholder": {
     "message": "Ask anything",
     "description": "Chat input placeholder"
@@ -401,10 +397,6 @@
     "message": "Copied",
     "description": "Copied assistant message button state"
   },
-  "chat__statusIdle": {
-    "message": "Idle",
-    "description": "Idle status"
-  },
   "chat__statusInitFailed": {
     "message": "Init failed: $1",
     "description": "Initialization failed with placeholder"
@@ -440,10 +432,6 @@
   "chat__statusStopped": {
     "message": "Stopped.",
     "description": "Generation stopped status"
-  },
-  "chat__statusModelNoStreaming": {
-    "message": "Current model does not support streaming.",
-    "description": "Warning shown when streaming is unavailable for the selected model"
   },
   "chat__statusPromptUnavailable": {
     "message": "Current prompt is unavailable.",
@@ -600,14 +588,6 @@
   "popup__timeRangeAll": {
     "message": "All Time",
     "description": "All time range option"
-  },
-  "popup__searchEnabledByDefault": {
-    "message": "Search Enabled By Default",
-    "description": "Search enabled by default checkbox"
-  },
-  "popup__defaultStreamingEnabled": {
-    "message": "Streaming Enabled By Default",
-    "description": "Streaming enabled by default checkbox"
   },
   "popup__emptyProviders": {
     "message": "No providers yet.",

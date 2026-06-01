@@ -15,7 +15,8 @@ import {
 } from '../src/shared/utils';
 import { normalizeUsagePayload } from '../src/shared/parsers';
 import { completeProviderTurn } from '../src/providers/openai-compatible';
-import type { ModelConfig, ProviderConfig } from '../src/shared/types';
+import { mergePromptsForImport, mergeProvidersForImport } from '../src/shared/imports';
+import type { ModelConfig, PromptConfig, ProviderConfig } from '../src/shared/types';
 
 function collectI18nKeysFromHtml(filePath: string): string[] {
   const html = fs.readFileSync(filePath, 'utf8');
@@ -28,6 +29,40 @@ function collectI18nKeysFromHtml(filePath: string): string[] {
   }
 
   return [...keys];
+}
+
+function createProviderFixture(id: string, name: string): ProviderConfig {
+  return {
+    id,
+    name,
+    baseUrl: `https://${id}.example/v1`,
+    apiKey: `${id}-key`,
+    transport: 'chat_completions',
+    defaultModel: `${id}-model`,
+    defaultGenerationParams: { temperature: null },
+    headers: {},
+    modelCatalog: [
+      {
+        modelId: `${id}-model`,
+        displayName: `${id}-model`,
+        supportsStreaming: true,
+        maxContextMessages: null,
+        reasoningFormat: 'none'
+      }
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z'
+  };
+}
+
+function createPromptFixture(id: string, name: string): PromptConfig {
+  return {
+    id,
+    name,
+    content: `${name} content`,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z'
+  };
 }
 
 export async function runSharedTests() {
@@ -67,6 +102,24 @@ export async function runSharedTests() {
   assert.equal(clampSearchRounds(2), 2);
   assert.equal(clampSearchRounds(999), 2);
   assert.equal(escapeHtml(`"<tag>" & 'quote'`), '&quot;&lt;tag&gt;&quot; &amp; &#39;quote&#39;');
+  const existingProvider = createProviderFixture('provider-existing', 'Old Provider');
+  const importedProvider = createProviderFixture('provider-existing', 'Updated Provider');
+  const newProvider = createProviderFixture('provider-new', 'New Provider');
+  const providerMerge = mergeProvidersForImport([existingProvider], [importedProvider, newProvider]);
+  assert.deepEqual(providerMerge.providers.map((provider) => provider.id), ['provider-existing', 'provider-new']);
+  assert.equal(providerMerge.providers[0].name, 'Updated Provider');
+  assert.equal(providerMerge.addedCount, 1);
+  assert.equal(providerMerge.updatedCount, 1);
+
+  const existingPrompt = createPromptFixture('prompt-existing', 'Old Prompt');
+  const importedPrompt = createPromptFixture('prompt-existing', 'Updated Prompt');
+  const newPrompt = createPromptFixture('prompt-new', 'New Prompt');
+  const promptMerge = mergePromptsForImport([existingPrompt], [importedPrompt, newPrompt]);
+  assert.deepEqual(promptMerge.prompts.map((prompt) => prompt.id), ['prompt-existing', 'prompt-new']);
+  assert.equal(promptMerge.prompts[0].name, 'Updated Prompt');
+  assert.equal(promptMerge.addedCount, 1);
+  assert.equal(promptMerge.updatedCount, 1);
+
   assert.deepEqual(
     addUsage(
       {
@@ -253,7 +306,7 @@ export async function runSharedTests() {
           }
         ]
       })
-    })) as typeof fetch;
+    })) as unknown as typeof fetch;
 
     try {
       const turn = await completeProviderTurn({
@@ -291,7 +344,7 @@ export async function runSharedTests() {
   }
 }
 
-function runI18nTests() {
+async function runI18nTests() {
   const en = JSON.parse(fs.readFileSync(path.join(process.cwd(), '_locales/en/messages.json'), 'utf8'));
   const zh = JSON.parse(fs.readFileSync(path.join(process.cwd(), '_locales/zh_CN/messages.json'), 'utf8'));
   const requiredKeys = [
@@ -299,7 +352,6 @@ function runI18nTests() {
     'popup__tabLLM',
     'popup__tabSearch',
     'chat__searchToggle',
-    'chat__statusIdle',
     'chat__statusInitFailed',
     'chat__statusCreateProviderFirst',
     'chat__statusProviderNotFound',
@@ -309,7 +361,6 @@ function runI18nTests() {
     'chat__statusSearchingFor',
     'chat__statusStopping',
     'chat__statusStopped',
-    'chat__statusModelNoStreaming',
     'chat__statusPromptUnavailable',
     'chat__statusConfigureTavilyFirst',
     'chat__statusTavilyReturned',
@@ -406,8 +457,19 @@ function runI18nTests() {
     assert.match(zh[key].message, /\$1/, `Missing zh placeholder in ${key}`);
   }
 
-  assert.equal('prompt__empty' in en, false);
-  assert.equal('prompt__empty' in zh, false);
+  const retiredKeys = [
+    'prompt__empty',
+    'chat__statusIdle',
+    'chat__statusModelNoStreaming',
+    'chat__thinking',
+    'popup__defaultStreamingEnabled',
+    'popup__searchEnabledByDefault'
+  ];
+
+  for (const key of retiredKeys) {
+    assert.equal(key in en, false, `Retired en key should be removed: ${key}`);
+    assert.equal(key in zh, false, `Retired zh key should be removed: ${key}`);
+  }
 
   const websiteFiles = [
     path.join(process.cwd(), 'website/index.html'),
@@ -419,6 +481,23 @@ function runI18nTests() {
       assert.ok(en[key], `Missing en website key: ${key}`);
       assert.ok(zh[key], `Missing zh website key: ${key}`);
     }
+  }
+
+  const websiteDistPairs = [
+    ['i18n.js', 'website-dist/i18n.js'],
+    ['_locales/en/messages.json', 'website-dist/_locales/en/messages.json'],
+    ['_locales/zh_CN/messages.json', 'website-dist/_locales/zh_CN/messages.json'],
+    ['website/index.html', 'website-dist/index.html'],
+    ['website/site-i18n-init.js', 'website-dist/site-i18n-init.js'],
+    ['website/privacy-policy.html', 'website-dist/privacy-policy.html']
+  ];
+
+  for (const [sourceRel, distRel] of websiteDistPairs) {
+    assert.equal(
+      fs.readFileSync(path.join(process.cwd(), distRel), 'utf8'),
+      fs.readFileSync(path.join(process.cwd(), sourceRel), 'utf8'),
+      `${distRel} should match ${sourceRel}. Run npm run build:website.`
+    );
   }
 
   const i18nScript = fs.readFileSync(path.join(process.cwd(), 'i18n.js'), 'utf8');
@@ -463,6 +542,44 @@ function runI18nTests() {
     'Added 2, updated 1 items',
     'Extension-page translations should preserve named placeholder values instead of dropping them.'
   );
+
+  const websiteContext = {
+    window: {
+      location: { search: '' },
+      navigator: { language: 'en' }
+    } as Record<string, unknown>,
+    document: {
+      documentElement: {
+        lang: 'en',
+        getAttribute() {
+          return null;
+        }
+      },
+      querySelectorAll() {
+        return [];
+      },
+      title: ''
+    },
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({
+        popup__footerVersion: {
+          message: 'Version $1'
+        }
+      })
+    }),
+    URLSearchParams,
+    navigator: { language: 'en' },
+    console
+  };
+  vm.runInNewContext(i18nScript, websiteContext);
+  await (websiteContext.window as { initPageTranslations: () => Promise<void> }).initPageTranslations();
+  const websiteTranslate = (websiteContext.window as { t?: (key: string, substitutions?: string) => string }).t;
+  assert.equal(
+    websiteTranslate?.('popup__footerVersion', '2.0.0'),
+    'Version 2.0.0',
+    'Website translations should resolve positional placeholders without chrome.i18n.'
+  );
 }
 
 function runChatWindowLayoutTests() {
@@ -505,6 +622,16 @@ function runChatWindowLayoutTests() {
     html,
     /<div id="composerStatus" class="composer-status" role="status" aria-live="polite" hidden>/,
     'Composer status should live inside the input composer and stay hidden while idle.'
+  );
+  assert.match(
+    html,
+    /<button id="settingsCloseBtn"[^>]*data-i18n-aria-label="content__btnClose"/,
+    'Chat settings close button should localize its aria-label.'
+  );
+  assert.match(
+    html,
+    /<button id="sendBtn"[^>]*data-i18n-aria-label="chat__btnSend"/,
+    'Chat send button should localize its aria-label.'
   );
   assert.match(html, /id="composerStatusText"/, 'Composer status should have a dedicated visible text node.');
   assert.match(
@@ -571,6 +698,21 @@ function runChatWindowLayoutTests() {
     chatTs,
     /catch \(error\)\s*\{[\s\S]*this\.resetLoadingState\(\);[\s\S]*this\.setComposerStatus\(this\.formatChatFailure\(getErrorMessage\(error\)\), 'error'\);[\s\S]*\}/,
     'Chat sends should recover from synchronous send failures instead of leaving the UI generating forever.'
+  );
+  assert.match(
+    chatTs,
+    /private removeCurrentAssistantPlaceholder\(\)[\s\S]*this\.currentAssistantState\?\.container\.remove\(\);/,
+    'Chat logic should centralize removal of the temporary assistant bubble.'
+  );
+  assert.match(
+    chatTs,
+    /case 'aborted':[\s\S]*this\.removeCurrentAssistantPlaceholder\(\);[\s\S]*this\.resetLoadingState\(\);/,
+    'Aborted requests should remove the temporary assistant bubble.'
+  );
+  assert.match(
+    chatTs,
+    /case 'failed':[\s\S]*this\.removeCurrentAssistantPlaceholder\(\);[\s\S]*this\.resetLoadingState\(\);/,
+    'Failed requests should remove the temporary assistant bubble.'
   );
   assert.match(chatTs, /private streamingOverride: boolean \| null = null;/, 'Chat state should track per-session streaming overrides.');
   assert.match(chatTs, /private maxContextMessagesOverride: number \| null = null;/, 'Chat state should track per-session message-window overrides.');
@@ -963,7 +1105,7 @@ function runContentToolbarLayoutTests() {
 
 export async function runAllTests() {
   await runSharedTests();
-  runI18nTests();
+  await runI18nTests();
   runChatWindowLayoutTests();
   runSettingsSurfaceLayoutTests();
   runContentToolbarLayoutTests();

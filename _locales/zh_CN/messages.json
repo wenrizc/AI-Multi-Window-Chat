@@ -108,8 +108,8 @@
     "description": "确认删除配置消息（带占位符）"
   },
   "popup__confirmImportReplace": {
-    "message": "导入将替换所有现有数据，确定继续吗？",
-    "description": "确认导入替换消息"
+    "message": "导入将添加不存在的项目，并更新已存在的项目，确定继续吗？",
+    "description": "确认导入合并消息"
   },
   "popup__defaultProfileName": {
     "message": "配置 $1",
@@ -267,10 +267,6 @@
     "message": "发送",
     "description": "发送按钮"
   },
-  "chat__thinking": {
-    "message": "AI 正在思考...",
-    "description": "思考指示器"
-  },
   "chat__inputPlaceholder": {
     "message": "输入你的问题",
     "description": "聊天输入框占位文案"
@@ -401,10 +397,6 @@
     "message": "已复制",
     "description": "助手消息复制完成按钮状态"
   },
-  "chat__statusIdle": {
-    "message": "空闲",
-    "description": "空闲状态"
-  },
   "chat__statusInitFailed": {
     "message": "初始化失败：$1",
     "description": "初始化失败消息"
@@ -440,10 +432,6 @@
   "chat__statusStopped": {
     "message": "已停止",
     "description": "已停止状态"
-  },
-  "chat__statusModelNoStreaming": {
-    "message": "当前模型不支持流式响应。",
-    "description": "当前模型不支持流式响应的提示"
   },
   "chat__statusPromptUnavailable": {
     "message": "当前提示词不可用。",
@@ -600,14 +588,6 @@
   "popup__timeRangeAll": {
     "message": "不限",
     "description": "不限时间范围选项"
-  },
-  "popup__searchEnabledByDefault": {
-    "message": "默认开启搜索",
-    "description": "默认开启搜索复选框"
-  },
-  "popup__defaultStreamingEnabled": {
-    "message": "默认开启流式响应",
-    "description": "默认开启流式响应复选框"
   },
   "popup__emptyProviders": {
     "message": "还没有模型配置。",

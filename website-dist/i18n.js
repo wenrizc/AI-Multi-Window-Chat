@@ -81,6 +81,7 @@
         const message = chrome.i18n.getMessage(key, positional);
         return message || key;
       }
+      const template = readMessageTemplate(key);
       return replacePositionalPlaceholders(template, positional);
     } catch (error) {
       console.warn(`Translation not found for key: ${key}`, error);
