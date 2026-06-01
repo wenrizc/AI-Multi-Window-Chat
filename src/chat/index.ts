@@ -668,7 +668,7 @@ class ChatWindowApp {
       });
     } catch (error) {
       console.error(error);
-      this.currentAssistantState?.container.remove();
+      this.removeCurrentAssistantPlaceholder();
       this.resetLoadingState();
       this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
     }
@@ -739,11 +739,13 @@ class ChatWindowApp {
         this.setLocalizedComposerStatus('chat__statusCompleted', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
       case 'aborted':
+        this.removeCurrentAssistantPlaceholder();
         this.resetLoadingState();
         this.setLocalizedComposerStatus('chat__statusStopped', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
       case 'failed':
         console.error(event.error);
+        this.removeCurrentAssistantPlaceholder();
         this.resetLoadingState();
         this.setComposerStatus(this.formatChatFailure(event.error), 'error');
         break;
@@ -796,6 +798,10 @@ class ChatWindowApp {
     };
     this.messages.push(message);
     this.resetLoadingState();
+  }
+
+  private removeCurrentAssistantPlaceholder() {
+    this.currentAssistantState?.container.remove();
   }
 
   private resetLoadingState() {
