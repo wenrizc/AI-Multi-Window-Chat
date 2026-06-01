@@ -56,6 +56,10 @@ export function compactText(value: string | null | undefined): string | null {
   return normalized ? normalized : null;
 }
 
+export function isDeepSeekModelId(modelId: string): boolean {
+  return modelId.toLowerCase().includes('deepseek');
+}
+
 export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')

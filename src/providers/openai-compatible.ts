@@ -37,7 +37,7 @@ function isToolResultMessage(message: ProviderMessage): message is ToolResultMes
   return message.role === 'tool';
 }
 
-function toChatMessages(messages: ProviderMessage[]) {
+function toChatMessages(messages: ProviderMessage[], includeReasoningContent: boolean) {
   return messages.map((message) => {
     if (isToolResultMessage(message)) {
       return {
@@ -49,9 +49,9 @@ function toChatMessages(messages: ProviderMessage[]) {
     }
 
     if (isAssistantToolCallMessage(message)) {
-      return {
+      const chatMessage: Record<string, unknown> = {
         role: 'assistant',
-        content: compactText(message.content),
+        content: includeReasoningContent ? message.content : compactText(message.content),
         tool_calls: message.toolCalls.map((toolCall) => ({
           id: toolCall.id,
           type: 'function',
@@ -61,6 +61,10 @@ function toChatMessages(messages: ProviderMessage[]) {
           }
         }))
       };
+      if (includeReasoningContent && typeof message.reasoningContent === 'string') {
+        chatMessage.reasoning_content = message.reasoningContent;
+      }
+      return chatMessage;
     }
 
     return {
@@ -404,6 +408,7 @@ function extractResponsesUsage(payload: Record<string, unknown>): Record<string,
 async function streamChatCompletions(
   provider: ProviderConfig,
   modelId: string,
+  includeReasoningContent: boolean,
   messages: ProviderMessage[],
   generationParams: { temperature: number | null },
   callbacks: StreamCallbacks,
@@ -416,7 +421,7 @@ async function streamChatCompletions(
     signal: callbacks.signal,
     body: JSON.stringify({
       model: modelId,
-      messages: toChatMessages(messages),
+      messages: toChatMessages(messages, includeReasoningContent),
       stream: true,
       stream_options: {
         include_usage: true
@@ -465,6 +470,7 @@ async function streamChatCompletions(
 async function completeChatCompletions(
   provider: ProviderConfig,
   modelId: string,
+  includeReasoningContent: boolean,
   messages: ProviderMessage[],
   generationParams: { temperature: number | null },
   callbacks: StreamCallbacks,
@@ -474,6 +480,7 @@ async function completeChatCompletions(
   const result = await completeChatTurn({
     provider,
     modelId,
+    includeReasoningContent,
     messages,
     generationParams,
     signal: callbacks.signal,
@@ -589,6 +596,7 @@ async function completeResponses(
 async function completeChatTurn(input: {
   provider: ProviderConfig;
   modelId: string;
+  includeReasoningContent: boolean;
   messages: ProviderMessage[];
   generationParams: { temperature: number | null };
   signal: AbortSignal;
@@ -601,7 +609,7 @@ async function completeChatTurn(input: {
     signal: input.signal,
     body: JSON.stringify({
       model: input.modelId,
-      messages: toChatMessages(input.messages),
+      messages: toChatMessages(input.messages, input.includeReasoningContent),
       stream: false,
       temperature: input.generationParams.temperature ?? undefined,
       tools: toChatTools(input.tools),
@@ -619,9 +627,12 @@ async function completeChatTurn(input: {
     ? choice.message as Record<string, unknown>
     : {};
 
+  const reasoningContent = extractChatReasoning(message);
+
   return applyDsmlToolCallFallback({
     content: extractTextFromContent(message.content),
-    reasoningSummary: compactText(extractChatReasoning(message)),
+    reasoningSummary: compactText(reasoningContent),
+    reasoningContent: reasoningContent || null,
     usage: mergeUsagePayload(null, payload.usage as Record<string, unknown> | undefined),
     toolCalls: extractChatToolCalls(message),
     responseId: null
@@ -672,6 +683,7 @@ async function completeResponsesTurn(input: {
   return applyDsmlToolCallFallback({
     content: extractResponsesText(payload),
     reasoningSummary: compactText(extractResponsesReasoning(payload)),
+    reasoningContent: null,
     usage: mergeUsagePayload(null, extractResponsesUsage(payload)),
     toolCalls: extractResponsesToolCalls(payload),
     responseId: typeof payload.id === 'string' ? payload.id : null
@@ -706,6 +718,7 @@ export async function completeProviderTurn(input: {
   return completeChatTurn({
     provider: input.provider,
     modelId: input.model.modelId,
+    includeReasoningContent: input.model.reasoningFormat === 'reasoning_content',
     messages: input.messages ?? [],
     generationParams: input.generationParams,
     signal: input.signal,
@@ -761,6 +774,7 @@ export async function streamProviderResponse(input: {
     return streamChatCompletions(
       input.provider,
       input.model.modelId,
+      input.model.reasoningFormat === 'reasoning_content',
       input.messages,
       input.generationParams,
       callbacks,
@@ -772,6 +786,7 @@ export async function streamProviderResponse(input: {
   return completeChatCompletions(
     input.provider,
     input.model.modelId,
+    input.model.reasoningFormat === 'reasoning_content',
     input.messages,
     input.generationParams,
     callbacks,

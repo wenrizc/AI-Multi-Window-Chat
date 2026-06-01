@@ -153,7 +153,8 @@ async function runChatCompletionParsingTests(server: ReturnType<typeof setupServ
       assert.equal(body.model, 'test-model');
       assert.equal(body.stream, false);
       assert.equal(body.tool_choice, 'auto');
-      assert.deepEqual((body.messages as Array<Record<string, unknown>>).at(-1), {
+      const requestMessages = body.messages as Array<Record<string, unknown>>;
+      assert.deepEqual(requestMessages[requestMessages.length - 1], {
         role: 'user',
         content: 'hello'
       });
@@ -554,8 +555,9 @@ async function runSearchToolSessionTests(server: ReturnType<typeof setupServer>)
 
       assert.equal(body.tools, undefined, 'Search tools should be disabled after maxRounds is reached.');
       const turnMessages = body.messages as Array<Record<string, unknown>>;
-      assert.equal(turnMessages.at(-1)?.role, 'tool');
-      assert.match(String(turnMessages.at(-1)?.content), /Beijing Weather/);
+      const lastTurnMessage = turnMessages[turnMessages.length - 1];
+      assert.equal(lastTurnMessage?.role, 'tool');
+      assert.match(String(lastTurnMessage?.content), /Beijing Weather/);
       return HttpResponse.json({
         choices: [
           {
@@ -600,8 +602,10 @@ async function runSearchToolSessionTests(server: ReturnType<typeof setupServer>)
   });
 
   assert.equal(llmBodies.length, 2);
-  assert.equal(tavilyBody?.api_key, 'tavily-key');
-  assert.equal(tavilyBody?.query, '北京天气预报 2025年1月30日');
+  assert.ok(tavilyBody);
+  const capturedTavilyBody = tavilyBody as Record<string, unknown>;
+  assert.equal(capturedTavilyBody.api_key, 'tavily-key');
+  assert.equal(capturedTavilyBody.query, '北京天气预报 2025年1月30日');
   assert.equal(result.content, '北京 2025 年 1 月 30 日天气：晴。');
   assert.equal(result.toolCalls.length, 1);
   assert.equal(result.toolCalls[0].status, 'completed');
@@ -611,6 +615,247 @@ async function runSearchToolSessionTests(server: ReturnType<typeof setupServer>)
   assert.ok(events.some((event) => event.type === 'statusUpdate' && event.status === 'searching'));
   assert.ok(events.some((event) => event.type === 'sourceUpdate' && event.sources.length === 1));
   assert.ok(events.some((event) => event.type === 'toolCallUpdate' && event.toolCalls[0]?.status === 'completed'));
+}
+
+async function runDeepSeekReasoningContentHistoryTests(server: ReturnType<typeof setupServer>) {
+  installChromeI18nMock();
+
+  const reasoningContent = '  Need weather search.\nCall the web_search tool.  ';
+  const llmBodies: Array<Record<string, unknown>> = [];
+
+  server.use(
+    http.post(`${BASE_URL}/chat/completions`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      llmBodies.push(body);
+
+      if (llmBodies.length === 1) {
+        return HttpResponse.json({
+          choices: [
+            {
+              message: {
+                content: '',
+                reasoning_content: reasoningContent,
+                tool_calls: [
+                  {
+                    id: 'call_deepseek_weather',
+                    type: 'function',
+                    function: {
+                      name: 'web_search',
+                      arguments: JSON.stringify({ query: '北京天气' })
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        });
+      }
+
+      const turnMessages = body.messages as Array<Record<string, unknown>>;
+      const assistantToolMessage = turnMessages.find((message) =>
+        message.role === 'assistant' && Array.isArray(message.tool_calls)
+      );
+      assert.equal(assistantToolMessage?.content, '');
+      assert.equal(assistantToolMessage?.reasoning_content, reasoningContent);
+
+      return HttpResponse.json({
+        choices: [
+          {
+            message: {
+              content: '北京天气已获取。'
+            }
+          }
+        ]
+      });
+    }),
+    http.post('https://api.tavily.com/search', () => HttpResponse.json({
+      results: [
+        {
+          title: 'Beijing Weather',
+          url: 'https://weather.example/beijing',
+          content: 'Sunny.',
+          score: 0.9
+        }
+      ]
+    }))
+  );
+
+  await runSearchToolSession({
+    provider: createProvider({
+      defaultModel: 'deepseek-v4-pro',
+      modelCatalog: [
+        createModel({
+          modelId: 'deepseek-v4-pro',
+          displayName: 'DeepSeek V4 Pro',
+          reasoningFormat: 'reasoning_content'
+        })
+      ]
+    }),
+    modelId: 'deepseek-v4-pro',
+    messages: [{ role: 'user', content: '查北京天气' }],
+    requestId: 'req-deepseek-reasoning',
+    searchSettings: createSearchSettings({ maxRounds: 1 }),
+    generationParams: { temperature: null },
+    signal: new AbortController().signal,
+    onEvent: () => undefined
+  });
+
+  assert.equal(llmBodies.length, 2);
+}
+
+async function runConfiguredReasoningContentHistoryTests(server: ReturnType<typeof setupServer>) {
+  installChromeI18nMock();
+
+  const reasoningContent = 'Provider requires this reasoning_content to continue tool use.';
+  const llmBodies: Array<Record<string, unknown>> = [];
+
+  server.use(
+    http.post(`${BASE_URL}/chat/completions`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      llmBodies.push(body);
+
+      if (llmBodies.length === 1) {
+        return HttpResponse.json({
+          choices: [
+            {
+              message: {
+                content: '',
+                reasoning_content: reasoningContent,
+                tool_calls: [
+                  {
+                    id: 'call_configured_reasoning',
+                    type: 'function',
+                    function: {
+                      name: 'web_search',
+                      arguments: JSON.stringify({ query: 'configured reasoning weather' })
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        });
+      }
+
+      const turnMessages = body.messages as Array<Record<string, unknown>>;
+      const assistantToolMessage = turnMessages.find((message) =>
+        message.role === 'assistant' && Array.isArray(message.tool_calls)
+      );
+      assert.equal(assistantToolMessage?.reasoning_content, reasoningContent);
+
+      return HttpResponse.json({
+        choices: [
+          {
+            message: {
+              content: 'Configured reasoning content was preserved.'
+            }
+          }
+        ]
+      });
+    }),
+    http.post('https://api.tavily.com/search', () => HttpResponse.json({
+      results: [
+        {
+          title: 'Configured Reasoning Weather',
+          url: 'https://weather.example/configured',
+          content: 'Clear.',
+          score: 0.9
+        }
+      ]
+    }))
+  );
+
+  await runSearchToolSession({
+    provider: createProvider({
+      defaultModel: 'qwen-reasoner',
+      modelCatalog: [
+        createModel({
+          modelId: 'qwen-reasoner',
+          displayName: 'Qwen Reasoner',
+          reasoningFormat: 'reasoning_content'
+        })
+      ]
+    }),
+    modelId: 'qwen-reasoner',
+    messages: [{ role: 'user', content: 'Search with configured reasoning content.' }],
+    requestId: 'req-configured-reasoning',
+    searchSettings: createSearchSettings({ maxRounds: 1 }),
+    generationParams: { temperature: null },
+    signal: new AbortController().signal,
+    onEvent: () => undefined
+  });
+
+  assert.equal(llmBodies.length, 2);
+}
+
+async function runNonDeepSeekReasoningContentHistoryTests(server: ReturnType<typeof setupServer>) {
+  installChromeI18nMock();
+
+  server.use(
+    http.post(`${BASE_URL}/chat/completions`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      const messages = body.messages as Array<Record<string, unknown>>;
+
+      if (messages.length === 1) {
+        return HttpResponse.json({
+          choices: [
+            {
+              message: {
+                content: '',
+                reasoning_content: 'provider-specific reasoning must not be replayed',
+                tool_calls: [
+                  {
+                    id: 'call_regular_weather',
+                    type: 'function',
+                    function: {
+                      name: 'web_search',
+                      arguments: JSON.stringify({ query: '南京天气' })
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        });
+      }
+
+      const assistantToolMessage = messages.find((message) =>
+        message.role === 'assistant' && Array.isArray(message.tool_calls)
+      );
+      assert.ok(!Object.prototype.hasOwnProperty.call(assistantToolMessage ?? {}, 'reasoning_content'));
+
+      return HttpResponse.json({
+        choices: [
+          {
+            message: {
+              content: '南京天气已获取。'
+            }
+          }
+        ]
+      });
+    }),
+    http.post('https://api.tavily.com/search', () => HttpResponse.json({
+      results: [
+        {
+          title: 'Nanjing Weather',
+          url: 'https://weather.example/nanjing',
+          content: 'Cloudy.',
+          score: 0.9
+        }
+      ]
+    }))
+  );
+
+  await runSearchToolSession({
+    provider: createProvider(),
+    modelId: 'test-model',
+    messages: [{ role: 'user', content: '查南京天气' }],
+    requestId: 'req-non-deepseek-reasoning',
+    searchSettings: createSearchSettings({ maxRounds: 1 }),
+    generationParams: { temperature: null },
+    signal: new AbortController().signal,
+    onEvent: () => undefined
+  });
 }
 
 async function runSearchFailureTests(server: ReturnType<typeof setupServer>) {
@@ -739,6 +984,12 @@ export async function runProviderCompatibleTests() {
     await runProviderErrorTests(server);
     server.resetHandlers();
     await runSearchToolSessionTests(server);
+    server.resetHandlers();
+    await runDeepSeekReasoningContentHistoryTests(server);
+    server.resetHandlers();
+    await runConfiguredReasoningContentHistoryTests(server);
+    server.resetHandlers();
+    await runNonDeepSeekReasoningContentHistoryTests(server);
     server.resetHandlers();
     await runSearchFailureTests(server);
   });

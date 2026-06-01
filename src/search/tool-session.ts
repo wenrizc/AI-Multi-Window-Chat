@@ -1,6 +1,7 @@
 import { completeProviderTurn } from '../providers/openai-compatible';
 import { searchWithTavily } from './tavily';
 import type {
+  AssistantToolCallMessage,
   ProviderConfig,
   ProviderMessage,
   SearchMeta,
@@ -248,6 +249,7 @@ export async function runSearchToolSession(input: {
   const model = getModel(input.provider, input.modelId);
   const searchTool = createSearchToolDefinition();
   const maxRounds = clampSearchRounds(input.searchSettings.maxRounds);
+  const preserveReasoningContent = model.reasoningFormat === 'reasoning_content';
 
   let usage: UsageMetrics | null = null;
   let content = '';
@@ -387,13 +389,18 @@ export async function runSearchToolSession(input: {
       toolOutputs.push(toolResult.toolOutput);
     }
 
+    const assistantToolMessage: AssistantToolCallMessage = {
+      role: 'assistant',
+      content: turn.content,
+      toolCalls: turn.toolCalls
+    };
+    if (preserveReasoningContent && typeof turn.reasoningContent === 'string') {
+      assistantToolMessage.reasoningContent = turn.reasoningContent;
+    }
+
     messages = [
       ...messages,
-      {
-        role: 'assistant',
-        content: turn.content,
-        toolCalls: turn.toolCalls
-      },
+      assistantToolMessage,
       ...toolOutputs
     ];
 

@@ -148,6 +148,7 @@ export interface ToolCall {
 export interface AssistantToolCallMessage {
   role: 'assistant';
   content: string;
+  reasoningContent?: string | null;
   toolCalls: ToolCall[];
 }
 
@@ -165,6 +166,7 @@ export type ProviderToolChoice = 'auto' | 'none';
 export interface ProviderTurnResult {
   content: string;
   reasoningSummary: string | null;
+  reasoningContent?: string | null;
   usage: UsageMetrics | null;
   toolCalls: ToolCall[];
   responseId: string | null;
