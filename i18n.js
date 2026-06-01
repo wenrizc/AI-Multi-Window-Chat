@@ -60,10 +60,13 @@
   }
 
   function t(key, substitutions = []) {
-    const template = readMessageTemplate(key);
-
     if (substitutions && typeof substitutions === 'object' && !Array.isArray(substitutions)) {
       try {
+        if (hasChromeI18n()) {
+          const message = chrome.i18n.getMessage(key, Object.values(substitutions));
+          return message || key;
+        }
+        const template = readMessageTemplate(key);
         return replaceNamedPlaceholders(template, substitutions);
       } catch (error) {
         console.warn(`Translation not found for key: ${key}`, error);
@@ -127,6 +130,13 @@
       const key = element.getAttribute('data-i18n-title');
       if (key) {
         element.title = t(key);
+      }
+    });
+
+    document.querySelectorAll('[data-i18n-aria-label]').forEach((element) => {
+      const key = element.getAttribute('data-i18n-aria-label');
+      if (key) {
+        element.setAttribute('aria-label', t(key));
       }
     });
 

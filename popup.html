@@ -290,7 +290,7 @@
       margin-bottom: 0;
     }
 
-    .reasoning-help {
+    .field-help {
       position: relative;
       width: 18px;
       height: 18px;
@@ -307,7 +307,7 @@
       user-select: none;
     }
 
-    .reasoning-tooltip {
+    .field-tooltip {
       position: absolute;
       left: 50%;
       bottom: calc(100% + 10px);
@@ -326,20 +326,28 @@
       transition: opacity 0.16s ease, transform 0.16s ease;
     }
 
+    .field-help:hover .field-tooltip,
+    .field-help:focus-within .field-tooltip {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .transport-help:hover .transport-tooltip,
+    .transport-help:focus-within .transport-tooltip,
     .reasoning-help:hover .reasoning-tooltip,
     .reasoning-help:focus-within .reasoning-tooltip {
       opacity: 1;
       transform: translate(-50%, 0);
     }
 
-    .reasoning-tooltip p {
+    .field-tooltip p {
       margin-bottom: 8px;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.55;
     }
 
-    .reasoning-tooltip p:last-child {
+    .field-tooltip p:last-child {
       margin-bottom: 0;
     }
 
@@ -479,6 +487,123 @@
       background: #fef2f2;
       color: #dc2626;
       border: 1px solid #fad2cf;
+    }
+
+    .onboarding-hero {
+      display: grid;
+      gap: 16px;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .onboarding-kicker {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .onboarding-title {
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .onboarding-copy {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .onboarding-steps {
+      display: grid;
+      gap: 12px;
+    }
+
+    .onboarding-step {
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(248, 250, 252, 0.95);
+    }
+
+    .onboarding-step-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .onboarding-step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .onboarding-presets {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .onboarding-preset {
+      min-height: 58px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    }
+
+    .onboarding-preset:hover,
+    .onboarding-preset.active {
+      border-color: rgba(37, 99, 235, 0.45);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+    }
+
+    .onboarding-preset:active {
+      transform: scale(0.98);
+    }
+
+    .onboarding-preset-name {
+      display: block;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .onboarding-preset-model {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .onboarding-fields {
+      display: grid;
+      gap: 10px;
+    }
+
+    .history-toolbar {
+      margin-bottom: 12px;
+    }
+
+    .history-toolbar input {
+      min-height: 38px;
     }
 
     .preset-buttons {
@@ -908,7 +1033,15 @@
           </div>
 
           <div class="input-group">
-            <label for="transportSelect" data-i18n="popup__labelTransport">Transport</label>
+            <div class="label-with-help">
+              <label for="transportSelect" data-i18n="popup__labelTransport">Transport</label>
+              <span class="transport-help field-help" tabindex="0" data-i18n-aria-label="popup__transportHelpAriaLabel" aria-label="Transport help">?
+                <span class="field-tooltip transport-tooltip" data-i18n-html="popup__transportHelp">
+                  <p><strong>Chat Completions</strong>: best for classic OpenAI-compatible chat endpoints that accept a messages array.</p>
+                  <p><strong>Responses</strong>: best for OpenAI Responses API and newer reasoning or tool-calling workflows.</p>
+                </span>
+              </span>
+            </div>
             <select id="transportSelect">
               <option value="chat_completions" data-i18n="popup__transportChatCompletions">Chat Completions</option>
               <option value="responses" data-i18n="popup__transportResponses">Responses</option>
@@ -918,8 +1051,8 @@
           <div class="input-group">
             <div class="label-with-help">
               <label for="reasoningFormatSelect" data-i18n="popup__labelReasoningFormat">Reasoning Format</label>
-              <span class="reasoning-help" tabindex="0" aria-label="Reasoning format help">?
-                <span class="reasoning-tooltip" data-i18n-html="popup__reasoningFormatHelp">
+              <span class="reasoning-help field-help" tabindex="0" data-i18n-aria-label="popup__reasoningFormatHelpAriaLabel" aria-label="Reasoning format help">?
+                <span class="field-tooltip reasoning-tooltip" data-i18n-html="popup__reasoningFormatHelp">
                   <p><strong>None</strong>: use normal response text only.</p>
                   <p><strong>OpenAI Summary</strong>: use OpenAI Responses reasoning summaries, typically for OpenAI reasoning models.</p>
                   <p><strong>reasoning_content</strong>: use the extra reasoning_content field, commonly used by DeepSeek/Qwen-compatible services.</p>
@@ -1041,6 +1174,10 @@
   <div class="tab-content" id="historyTab">
     <div id="historyStatus" class="status"></div>
 
+    <div class="history-toolbar">
+      <input type="text" id="historySearchInput" data-i18n-placeholder="history__searchPlaceholder" placeholder="Search history" />
+    </div>
+
     <div class="history-list" id="historyList">
       <div class="history-empty">
         <div class="history-empty-icon">💬</div>
@@ -1061,6 +1198,71 @@
   <!-- Hidden file inputs for import -->
   <input type="file" id="importProfilesInput" accept=".json, .md, .markdown" style="display: none;" />
   <input type="file" id="importPromptsInput" accept=".json, .md, .markdown" style="display: none;" />
+
+  <div class="modal" id="onboardingModal">
+    <div class="modal-content onboarding-hero">
+      <div>
+        <div class="onboarding-kicker" data-i18n="onboarding__kicker">First run</div>
+        <div class="onboarding-title" data-i18n="onboarding__title">Set up your first AI window</div>
+        <p class="onboarding-copy" data-i18n="onboarding__intro">Pick a provider, add your key and model, then test the connection. We will open a sample chat when everything is ready.</p>
+      </div>
+
+      <div id="onboardingStatus" class="status"></div>
+
+      <div class="onboarding-steps">
+        <section class="onboarding-step">
+          <div class="onboarding-step-title">
+            <span class="onboarding-step-number">1</span>
+            <span data-i18n="onboarding__stepProvider">Choose a provider preset</span>
+          </div>
+          <div class="onboarding-presets">
+            <button class="onboarding-preset active" type="button" data-onboarding-preset="openai">
+              <span class="onboarding-preset-name">OpenAI</span>
+              <span class="onboarding-preset-model">gpt-5</span>
+            </button>
+            <button class="onboarding-preset" type="button" data-onboarding-preset="deepseek">
+              <span class="onboarding-preset-name">DeepSeek</span>
+              <span class="onboarding-preset-model">deepseek-chat</span>
+            </button>
+            <button class="onboarding-preset" type="button" data-onboarding-preset="qwen">
+              <span class="onboarding-preset-name">Qwen</span>
+              <span class="onboarding-preset-model">qwen-plus</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="onboarding-step">
+          <div class="onboarding-step-title">
+            <span class="onboarding-step-number">2</span>
+            <span data-i18n="onboarding__stepCredentials">Add API key and model</span>
+          </div>
+          <div class="onboarding-fields">
+            <div class="input-group">
+              <label for="onboardingApiKey" data-i18n="popup__labelApiKey">API Key</label>
+              <input type="password" id="onboardingApiKey" />
+            </div>
+            <div class="input-group">
+              <label for="onboardingModelName" data-i18n="popup__labelModelName">Model Name</label>
+              <input type="text" id="onboardingModelName" />
+            </div>
+          </div>
+        </section>
+
+        <section class="onboarding-step">
+          <div class="onboarding-step-title">
+            <span class="onboarding-step-number">3</span>
+            <span data-i18n="onboarding__stepLaunch">Test and launch</span>
+          </div>
+          <p class="onboarding-copy" data-i18n="onboarding__launchCopy">A successful test saves this as your default provider and opens a starter chat in the current tab.</p>
+        </section>
+      </div>
+
+      <div class="confirm-dialog-actions">
+        <button class="btn btn-secondary" id="onboardingSkipBtn" data-i18n="onboarding__skip">Set up manually</button>
+        <button class="btn btn-primary" id="onboardingSaveTestBtn" data-i18n="onboarding__saveTestLaunch">Save, test, and launch</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="exportModal">
     <div class="modal-content">

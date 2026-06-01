@@ -1,21 +1,25 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { createEmptyStore } from '../src/shared/constants';
 import {
   addUsage,
   clampSearchRounds,
   escapeHtml,
   formatUsageLabel,
+  i18nMessage,
   normalizeMaxContextMessages,
   sliceMessageWindow,
   writeTextToClipboard
 } from '../src/shared/utils';
 import { normalizeUsagePayload } from '../src/shared/parsers';
+import { completeProviderTurn } from '../src/providers/openai-compatible';
+import type { ModelConfig, ProviderConfig } from '../src/shared/types';
 
 function collectI18nKeysFromHtml(filePath: string): string[] {
   const html = fs.readFileSync(filePath, 'utf8');
-  const regex = /data-i18n(?:-html|-placeholder|-title|-document-title)?="([^"]+)"/g;
+  const regex = /data-i18n(?:-html|-placeholder|-title|-aria-label|-document-title)?="([^"]+)"/g;
   const keys = new Set<string>();
   let match: RegExpExecArray | null;
 
@@ -93,7 +97,8 @@ export async function runSharedTests() {
     usage__unavailable: 'Usage unavailable',
     usage__inputTokens: 'In $1',
     usage__outputTokens: 'Out $1',
-    usage__reasoningTokens: 'Reason $1'
+    usage__reasoningTokens: 'Reason $1',
+    config__statusImported: 'Added $1, updated $2 items'
   };
   const chromeMock = {
     i18n: {
@@ -133,6 +138,10 @@ export async function runSharedTests() {
       totalTokens: 215
     }),
     'In 120 | Out 80 | Reason 15'
+  );
+  assert.equal(
+    i18nMessage('config__statusImported', { addedCount: '2', updatedCount: '1' }),
+    'Added 2, updated 1 items'
   );
 
   {
@@ -208,6 +217,78 @@ export async function runSharedTests() {
       'remove:true'
     ]);
   }
+
+  {
+    const originalFetch = globalThis.fetch;
+    const provider: ProviderConfig = {
+      id: 'provider-test',
+      name: 'Provider Test',
+      baseUrl: 'https://example.test/v1',
+      apiKey: 'test-key',
+      transport: 'chat_completions',
+      defaultModel: 'test-model',
+      defaultGenerationParams: { temperature: null },
+      headers: {},
+      modelCatalog: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    };
+    const model: ModelConfig = {
+      modelId: 'test-model',
+      displayName: 'Test Model',
+      supportsStreaming: false,
+      maxContextMessages: null,
+      reasoningFormat: 'none'
+    };
+    const dsml = '<｜｜DSML｜｜tool_calls> <｜｜DSML｜｜invoke name="web_search"> <｜｜DSML｜｜parameter name="query" string="true">北京天气预报 2025年1月30日</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke> </｜｜DSML｜｜tool_calls>';
+
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: dsml
+            }
+          }
+        ]
+      })
+    })) as typeof fetch;
+
+    try {
+      const turn = await completeProviderTurn({
+        provider,
+        model,
+        messages: [{ role: 'user', content: '查北京天气' }],
+        generationParams: { temperature: null },
+        signal: new AbortController().signal,
+        tools: [{
+          type: 'function',
+          name: 'web_search',
+          description: 'Search the web',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string' }
+            },
+            required: ['query']
+          }
+        }],
+        toolChoice: 'auto'
+      });
+
+      assert.equal(turn.content, '');
+      assert.deepEqual(turn.toolCalls, [
+        {
+          id: 'dsml_call_1',
+          name: 'web_search',
+          arguments: JSON.stringify({ query: '北京天气预报 2025年1月30日' })
+        }
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
 }
 
 function runI18nTests() {
@@ -259,11 +340,14 @@ function runI18nTests() {
     'chat__toolWaiting',
     'chat__noProvider',
     'popup__labelTransport',
+    'popup__transportHelp',
+    'popup__transportHelpAriaLabel',
     'popup__labelReasoningFormat',
     'popup__supportsStreaming',
     'popup__labelMaxContextMessages',
     'popup__labelDefaultTemperature',
     'popup__reasoningFormatHelp',
+    'popup__reasoningFormatHelpAriaLabel',
     'popup__maxContextMessagesPlaceholder',
     'popup__labelTavilyApiKey',
     'popup__labelSearchDepth',
@@ -277,6 +361,22 @@ function runI18nTests() {
     'popup__timeRangeAll',
     'popup__emptyProviders',
     'prompt__emptyState',
+    'history__searchPlaceholder',
+    'history__searchNoResults',
+    'onboarding__kicker',
+    'onboarding__title',
+    'onboarding__intro',
+    'onboarding__stepProvider',
+    'onboarding__stepCredentials',
+    'onboarding__stepLaunch',
+    'onboarding__launchCopy',
+    'onboarding__skip',
+    'onboarding__saveTestLaunch',
+    'onboarding__statusMissingFields',
+    'onboarding__statusTesting',
+    'onboarding__statusReady',
+    'onboarding__statusSavedOpenFailed',
+    'onboarding__samplePrompt',
     'popup__untitledProvider',
     'prompt__untitled',
     'common__none',
@@ -285,6 +385,9 @@ function runI18nTests() {
     'export__sources',
     'history__exportFormatJson',
     'content__btnSettings',
+    'content__btnDockLeft',
+    'content__btnDockRight',
+    'content__btnFullscreen',
     'content__btnMinimize',
     'content__btnClose',
     'usage__unavailable',
@@ -317,6 +420,49 @@ function runI18nTests() {
       assert.ok(zh[key], `Missing zh website key: ${key}`);
     }
   }
+
+  const i18nScript = fs.readFileSync(path.join(process.cwd(), 'i18n.js'), 'utf8');
+  const scriptContext = {
+    window: {} as Record<string, unknown>,
+    chrome: {
+      i18n: {
+        getUILanguage() {
+          return 'en';
+        },
+        getMessage(key: string, substitutions?: string | Array<string | number>) {
+          if (key !== 'config__statusImported') {
+            return key;
+          }
+          if (!substitutions) {
+            return 'Added , updated  items';
+          }
+          const values = Array.isArray(substitutions) ? substitutions : [substitutions];
+          return `Added ${values[0] ?? ''}, updated ${values[1] ?? ''} items`;
+        }
+      }
+    },
+    document: {
+      documentElement: {
+        lang: 'en',
+        getAttribute() {
+          return null;
+        }
+      },
+      querySelectorAll() {
+        return [];
+      },
+      title: ''
+    },
+    navigator: { language: 'en' },
+    console
+  };
+  vm.runInNewContext(i18nScript, scriptContext);
+  const translate = (scriptContext.window as { t?: (key: string, substitutions?: Record<string, string>) => string }).t;
+  assert.equal(
+    translate?.('config__statusImported', { addedCount: '2', updatedCount: '1' }),
+    'Added 2, updated 1 items',
+    'Extension-page translations should preserve named placeholder values instead of dropping them.'
+  );
 }
 
 function runChatWindowLayoutTests() {
@@ -468,6 +614,46 @@ function runSettingsSurfaceLayoutTests() {
     /body\s*\{[^}]*width:\s*568px;[^}]*min-width:\s*568px;/s,
     'Extension settings popup should keep a stable width instead of collapsing to a narrow strip.'
   );
+  assert.match(popupHtml, /id="onboardingModal"/, 'First-run setup should render a dedicated onboarding modal.');
+  assert.match(
+    popupHtml,
+    /data-onboarding-preset="openai"[\s\S]*data-onboarding-preset="deepseek"[\s\S]*data-onboarding-preset="qwen"/,
+    'Onboarding should offer OpenAI, DeepSeek, and Qwen provider presets.'
+  );
+  assert.match(popupHtml, /id="onboardingApiKey"/, 'Onboarding should collect the API key in the wizard.');
+  assert.match(popupHtml, /id="onboardingModelName"/, 'Onboarding should collect or confirm the model name in the wizard.');
+  assert.match(popupHtml, /id="onboardingSaveTestBtn"/, 'Onboarding should expose a save, test, and launch action.');
+  assert.match(
+    popupTs,
+    /maybeShowOnboarding\(\)/,
+    'Popup logic should decide whether to show onboarding when no provider exists.'
+  );
+  assert.match(
+    popupTs,
+    /completeOnboarding\(\)/,
+    'Popup logic should save the onboarding provider and run the completion flow.'
+  );
+  assert.match(
+    popupTs,
+    /type:\s*'OPEN_CHAT_WINDOW'[\s\S]*initialMessage:/,
+    'Completing onboarding should open a sample chat on the active page.'
+  );
+  assert.match(popupHtml, /id="historySearchInput"/, 'History should include a search input.');
+  assert.match(
+    popupTs,
+    /private historySearchTerm = '';/,
+    'Popup logic should track the current history search query.'
+  );
+  assert.match(
+    popupTs,
+    /historySearchInput\.addEventListener\('input'/,
+    'History search should filter as the user types.'
+  );
+  assert.match(
+    popupTs,
+    /filteredHistory\s*=/,
+    'History rendering should use a filtered chat list rather than always showing all chats.'
+  );
   assert.match(
     popupHtml,
     /html,\s*body\s*\{[^}]*height:\s*auto;/s,
@@ -542,8 +728,23 @@ function runSettingsSurfaceLayoutTests() {
   );
   assert.match(
     popupHtml,
-    /class="reasoning-help"[\s\S]*data-i18n-html="popup__reasoningFormatHelp"/,
+    /class="[^"]*transport-help[^"]*"[\s\S]*data-i18n-aria-label="popup__transportHelpAriaLabel"[\s\S]*data-i18n-html="popup__transportHelp"/,
+    'Transport should include a hover help popover.'
+  );
+  assert.match(
+    popupHtml,
+    /\.transport-help:hover\s+\.transport-tooltip/s,
+    'Transport help should show the popover on hover.'
+  );
+  assert.match(
+    popupHtml,
+    /class="[^"]*reasoning-help[^"]*"[\s\S]*data-i18n-aria-label="popup__reasoningFormatHelpAriaLabel"[\s\S]*data-i18n-html="popup__reasoningFormatHelp"/,
     'Reasoning format should include a hover help popover.'
+  );
+  assert.match(
+    fs.readFileSync(path.join(process.cwd(), 'i18n.js'), 'utf8'),
+    /querySelectorAll\('\[data-i18n-aria-label\]'\)/,
+    'Shared i18n should translate aria-label attributes.'
   );
   assert.match(
     popupHtml,
@@ -699,6 +900,20 @@ function runSettingsSurfaceLayoutTests() {
     /event\.key\.toLowerCase\(\)\s*===\s*'w'/,
     'Injected page shortcuts should no longer close chat windows with Alt+W.'
   );
+  assert.match(contentTs, /document\.addEventListener\('pointerup'/, 'Selection toolbar should use pointer events for mouse and touch.');
+  assert.match(contentTs, /header\.addEventListener\('pointerdown'/, 'Injected windows should start dragging with pointer events.');
+  assert.match(contentTs, /setPointerCapture\(event\.pointerId\)/, 'Drag and resize interactions should capture the active pointer.');
+  assert.match(contentTs, /SNAP_THRESHOLD/, 'Injected windows should support edge snapping for small screens and touch use.');
+  assert.match(contentTs, /class="ai-window-btn ai-dock-toggle-btn"/, 'Injected windows should expose one dynamic dock toggle button.');
+  assert.doesNotMatch(contentTs, /ai-dock-left-btn/, 'Injected windows should not render a separate left dock button.');
+  assert.doesNotMatch(contentTs, /ai-dock-right-btn/, 'Injected windows should not render a separate right dock button.');
+  assert.match(contentTs, /private dockWindow\(windowId: string, mode: 'left' \| 'right'\)/, 'Injected windows should support half-screen docking.');
+  assert.match(contentTs, /private updateDockToggle\(windowId: string\)/, 'Injected windows should dynamically switch the dock icon.');
+  assert.match(contentTs, /private getDockModeForWindow\(wrapper: HTMLElement\): 'left' \| 'right'/, 'Dock toggle should derive its next side from current window state.');
+  assert.match(contentTs, /private toggleFullscreen\(windowId: string\)/, 'Injected windows should support a fullscreen toggle.');
+  assert.doesNotMatch(contentTs, /addEventListener\('mousedown'/, 'Injected window controls should not depend on mouse-only drag or resize events.');
+  assert.doesNotMatch(contentTs, /addEventListener\('mousemove'/, 'Injected window controls should not depend on mouse-only move events.');
+  assert.doesNotMatch(contentTs, /addEventListener\('mouseup'/, 'Injected window controls should not depend on mouse-only release events.');
 }
 
 function runContentToolbarLayoutTests() {
@@ -713,6 +928,21 @@ function runContentToolbarLayoutTests() {
     css,
     /\.ai-toolbar-btn:hover\s*\{[^}]*border-color:\s*#bfdbfe;/s,
     'The AI chat button should keep its own highlighted hover border.'
+  );
+  assert.match(
+    css,
+    /\.ai-multi-window\s*\{[^}]*touch-action:\s*none;/s,
+    'Injected chat windows should opt into direct pointer handling for touch drag and resize.'
+  );
+  assert.match(
+    css,
+    /\.ai-resize-handle\s*\{[^}]*touch-action:\s*none;/s,
+    'Resize handles should expose touch-friendly pointer behavior.'
+  );
+  assert.match(
+    css,
+    /\.ai-window-btn\s*\{[^}]*min-width:\s*34px;[^}]*min-height:\s*34px;/s,
+    'Window control buttons should have a larger touch target.'
   );
 }
 

@@ -65,8 +65,14 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function i18nMessage(key: string, substitutions?: string | string[]): string {
-  return chrome.i18n.getMessage(key, substitutions as string | string[]) || key;
+export function i18nMessage(
+  key: string,
+  substitutions?: string | number | Array<string | number> | Record<string, string | number>
+): string {
+  const normalized = substitutions && typeof substitutions === 'object' && !Array.isArray(substitutions)
+    ? Object.values(substitutions)
+    : substitutions;
+  return chrome.i18n.getMessage(key, normalized as string | Array<string | number>) || key;
 }
 
 export function createUsageMetrics(partial?: Partial<UsageMetrics> | null): UsageMetrics | null {

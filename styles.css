@@ -69,6 +69,7 @@
   backdrop-filter: blur(18px);
   box-shadow: 0 28px 60px rgba(15, 23, 42, 0.2);
   animation: windowFadeIn 0.24s ease-out;
+  touch-action: none;
 }
 
 @keyframes windowFadeIn {
@@ -103,12 +104,14 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.9));
   cursor: move;
   user-select: none;
+  touch-action: none;
   border-radius: 18px 18px 0 0;
 }
 
 .ai-window-title {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -124,7 +127,8 @@
 }
 
 .ai-title-input {
-  min-width: 220px;
+  width: 100%;
+  min-width: 0;
   border: 1px solid rgba(37, 99, 235, 0.45);
   border-radius: 10px;
   background: #ffffff;
@@ -147,6 +151,8 @@
 .ai-window-btn {
   width: 30px;
   height: 30px;
+  min-width: 34px;
+  min-height: 34px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -194,45 +200,46 @@
   position: absolute;
   z-index: 1000;
   pointer-events: auto;
+  touch-action: none;
 }
 
 .ai-resize-e {
   top: 0;
-  right: -10px;
-  width: 20px;
+  right: -12px;
+  width: 24px;
   height: 100%;
   cursor: e-resize;
 }
 
 .ai-resize-w {
   top: 0;
-  left: -10px;
-  width: 20px;
+  left: -12px;
+  width: 24px;
   height: 100%;
   cursor: w-resize;
 }
 
 .ai-resize-s {
-  bottom: -10px;
+  bottom: -12px;
   left: 0;
   width: 100%;
-  height: 20px;
+  height: 24px;
   cursor: s-resize;
 }
 
 .ai-resize-se {
-  right: -10px;
-  bottom: -10px;
-  width: 24px;
-  height: 24px;
+  right: -12px;
+  bottom: -12px;
+  width: 30px;
+  height: 30px;
   cursor: se-resize;
 }
 
 .ai-resize-sw {
-  left: -10px;
-  bottom: -10px;
-  width: 24px;
-  height: 24px;
+  left: -12px;
+  bottom: -12px;
+  width: 30px;
+  height: 30px;
   cursor: sw-resize;
 }
 

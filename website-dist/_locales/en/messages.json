@@ -362,7 +362,7 @@
     "description": "Generating status"
   },
   "chat__statusDecidingSearch": {
-    "message": "Deciding whether search is needed...",
+    "message": "Generating response...",
     "description": "Search decision status"
   },
   "chat__statusSearchingFor": {

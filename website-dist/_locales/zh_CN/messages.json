@@ -362,7 +362,7 @@
     "description": "生成状态"
   },
   "chat__statusDecidingSearch": {
-    "message": "正在判断是否需要搜索...",
+    "message": "正在生成回答...",
     "description": "搜索判断状态"
   },
   "chat__statusSearchingFor": {

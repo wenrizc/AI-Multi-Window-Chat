@@ -309,6 +309,83 @@ function extractResponsesToolCalls(payload: Record<string, unknown>): ToolCall[]
   });
 }
 
+const DSML_TOOL_CALLS_BLOCK_REGEX =
+  /<[^>]*DSML[^>]*tool_calls[^>]*>[\s\S]*?<\/[^>]*DSML[^>]*tool_calls[^>]*>/g;
+const DSML_INVOKE_REGEX =
+  /<[^>]*DSML[^>]*invoke\b([^>]*)>([\s\S]*?)<\/[^>]*DSML[^>]*invoke[^>]*>/g;
+const DSML_PARAMETER_REGEX =
+  /<[^>]*DSML[^>]*parameter\b([^>]*)>([\s\S]*?)<\/[^>]*DSML[^>]*parameter[^>]*>/g;
+
+function parseAttributes(input: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const regex = /([A-Za-z_][\w:-]*)="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(input)) !== null) {
+    attributes[match[1]] = match[2];
+  }
+
+  return attributes;
+}
+
+function extractDsmlToolCalls(content: string): ToolCall[] {
+  const toolCalls: ToolCall[] = [];
+  const blocks = content.match(DSML_TOOL_CALLS_BLOCK_REGEX) ?? [];
+
+  for (const block of blocks) {
+    let invokeMatch: RegExpExecArray | null;
+    DSML_INVOKE_REGEX.lastIndex = 0;
+
+    while ((invokeMatch = DSML_INVOKE_REGEX.exec(block)) !== null) {
+      const invokeAttributes = parseAttributes(invokeMatch[1]);
+      const name = invokeAttributes.name?.trim();
+      if (!name) {
+        continue;
+      }
+
+      const args: Record<string, string> = {};
+      DSML_PARAMETER_REGEX.lastIndex = 0;
+      let parameterMatch: RegExpExecArray | null;
+      while ((parameterMatch = DSML_PARAMETER_REGEX.exec(invokeMatch[2])) !== null) {
+        const parameterAttributes = parseAttributes(parameterMatch[1]);
+        const parameterName = parameterAttributes.name?.trim();
+        if (parameterName) {
+          args[parameterName] = parameterMatch[2].trim();
+        }
+      }
+
+      toolCalls.push({
+        id: `dsml_call_${toolCalls.length + 1}`,
+        name,
+        arguments: JSON.stringify(args)
+      });
+    }
+  }
+
+  return toolCalls;
+}
+
+function removeDsmlToolCallBlocks(content: string): string {
+  return compactText(content.replace(DSML_TOOL_CALLS_BLOCK_REGEX, '')) ?? '';
+}
+
+function applyDsmlToolCallFallback(result: ProviderTurnResult): ProviderTurnResult {
+  if (result.toolCalls.length > 0 || !result.content.includes('DSML')) {
+    return result;
+  }
+
+  const toolCalls = extractDsmlToolCalls(result.content);
+  if (toolCalls.length === 0) {
+    return result;
+  }
+
+  return {
+    ...result,
+    content: removeDsmlToolCallBlocks(result.content),
+    toolCalls
+  };
+}
+
 function extractResponsesUsage(payload: Record<string, unknown>): Record<string, unknown> | undefined {
   if (payload.usage && typeof payload.usage === 'object') {
     return payload.usage as Record<string, unknown>;
@@ -542,13 +619,13 @@ async function completeChatTurn(input: {
     ? choice.message as Record<string, unknown>
     : {};
 
-  return {
+  return applyDsmlToolCallFallback({
     content: extractTextFromContent(message.content),
     reasoningSummary: compactText(extractChatReasoning(message)),
     usage: mergeUsagePayload(null, payload.usage as Record<string, unknown> | undefined),
     toolCalls: extractChatToolCalls(message),
     responseId: null
-  };
+  });
 }
 
 async function completeResponsesTurn(input: {
@@ -592,13 +669,13 @@ async function completeResponsesTurn(input: {
   }
 
   const payload = await response.json() as Record<string, unknown>;
-  return {
+  return applyDsmlToolCallFallback({
     content: extractResponsesText(payload),
     reasoningSummary: compactText(extractResponsesReasoning(payload)),
     usage: mergeUsagePayload(null, extractResponsesUsage(payload)),
     toolCalls: extractResponsesToolCalls(payload),
     responseId: typeof payload.id === 'string' ? payload.id : null
-  };
+  });
 }
 
 export async function completeProviderTurn(input: {

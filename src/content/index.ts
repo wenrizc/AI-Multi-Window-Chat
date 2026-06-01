@@ -14,6 +14,7 @@ class AIMultiWindow {
   private static readonly MIN_WINDOW_HEIGHT = 400;
   private static readonly SETTINGS_PANEL_WINDOW_WIDTH = 390;
   private static readonly WINDOW_Z_INDEX_BASE = 2147483000;
+  private static readonly SNAP_THRESHOLD = 28;
   private windows = new Map<string, {
     chatId: string;
     element: HTMLElement;
@@ -24,6 +25,12 @@ class AIMultiWindow {
   }>();
   private windowStack: string[] = [];
   private windowTitles = new Map<string, string>();
+  private savedLayouts = new Map<string, {
+    left: string;
+    top: string;
+    width: string;
+    height: string;
+  }>();
   private nextFreshWindowNumber = 1;
   private counter = 0;
 
@@ -36,7 +43,8 @@ class AIMultiWindow {
     this.setupKeyboardShortcuts();
     chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       if (request?.type === 'OPEN_CHAT_WINDOW') {
-        this.createChatWindow('', request.chat as ChatSession);
+        const initialMessage = typeof request.initialMessage === 'string' ? request.initialMessage : '';
+        this.createChatWindow(initialMessage, request.chat as ChatSession | undefined);
         sendResponse?.({ success: true });
       }
     });
@@ -45,7 +53,7 @@ class AIMultiWindow {
   private setupSelectionToolbar() {
     let selectionTimeout: number | undefined;
 
-    document.addEventListener('mouseup', (event) => {
+    document.addEventListener('pointerup', (event) => {
       if ((event.target as HTMLElement)?.closest('.ai-multi-window') || (event.target as HTMLElement)?.closest('.ai-selection-toolbar')) {
         return;
       }
@@ -53,7 +61,7 @@ class AIMultiWindow {
       selectionTimeout = window.setTimeout(() => this.handleSelection(), 250);
     });
 
-    document.addEventListener('mousedown', (event) => {
+    document.addEventListener('pointerdown', (event) => {
       if (!(event.target as HTMLElement)?.closest('.ai-selection-toolbar')) {
         this.hideToolbar();
       }
@@ -153,6 +161,7 @@ class AIMultiWindow {
     this.windows.delete(windowId);
     this.windowStack = this.windowStack.filter((id) => id !== windowId);
     this.windowTitles.delete(windowId);
+    this.savedLayouts.delete(windowId);
     entry.cleanup();
     entry.element.remove();
     this.syncWindowStack();
@@ -302,6 +311,17 @@ class AIMultiWindow {
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
           </button>
+          <button class="ai-window-btn ai-dock-toggle-btn" type="button" title="${escapeHtmlAttr(t('content__btnDockLeft'))}" aria-label="${escapeHtmlAttr(t('content__btnDockLeft'))}">
+            ${this.getDockIconSvg('left')}
+          </button>
+          <button class="ai-window-btn ai-fullscreen-btn" type="button" title="${escapeHtmlAttr(t('content__btnFullscreen'))}" aria-label="${escapeHtmlAttr(t('content__btnFullscreen'))}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+              <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+            </svg>
+          </button>
           <button class="ai-window-btn ai-minimize-btn" type="button" title="${escapeHtmlAttr(t('content__btnMinimize'))}" aria-label="${escapeHtmlAttr(t('content__btnMinimize'))}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
               <path d="M5 12h14"></path>
@@ -356,6 +376,7 @@ class AIMultiWindow {
     });
     this.activateWindow(windowId);
     this.clampWindowToViewport(wrapper);
+    this.updateDockToggle(windowId);
 
     iframe.style.width = '100%';
     iframe.style.height = '100%';
@@ -388,6 +409,13 @@ class AIMultiWindow {
         chrome.runtime.getURL('')
       );
     });
+    wrapper.querySelector('.ai-dock-toggle-btn')?.addEventListener('click', () => {
+      const mode = this.getDockModeForWindow(wrapper);
+      this.dockWindow(windowId, mode);
+    });
+    wrapper.querySelector('.ai-fullscreen-btn')?.addEventListener('click', () => {
+      this.toggleFullscreen(windowId);
+    });
     wrapper.querySelector('.ai-close-btn')?.addEventListener('click', () => {
       this.closeWindow(windowId);
     });
@@ -395,6 +423,157 @@ class AIMultiWindow {
       wrapper.classList.toggle('minimized');
       this.clampWindowToViewport(wrapper);
     });
+  }
+
+  private saveWindowLayout(windowId: string, wrapper: HTMLElement) {
+    if (wrapper.classList.contains('docked') || wrapper.classList.contains('fullscreen')) {
+      return;
+    }
+    this.savedLayouts.set(windowId, {
+      left: wrapper.style.left,
+      top: wrapper.style.top,
+      width: wrapper.style.width,
+      height: wrapper.style.height
+    });
+  }
+
+  private restoreWindowLayout(windowId: string, wrapper: HTMLElement) {
+    const saved = this.savedLayouts.get(windowId);
+    wrapper.classList.remove('docked', 'docked-left', 'docked-right', 'fullscreen');
+    if (saved) {
+      wrapper.style.left = saved.left;
+      wrapper.style.top = saved.top;
+      wrapper.style.width = saved.width;
+      wrapper.style.height = saved.height;
+    }
+    this.clampWindowToViewport(wrapper);
+    this.updateDockToggle(windowId);
+  }
+
+  private dockWindow(windowId: string, mode: 'left' | 'right') {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+    const wrapper = entry.element;
+    wrapper.classList.remove('minimized');
+    this.saveWindowLayout(windowId, wrapper);
+    wrapper.classList.remove('fullscreen', 'docked-left', 'docked-right');
+    wrapper.classList.add('docked', mode === 'left' ? 'docked-left' : 'docked-right');
+    this.applyDockedLayout(wrapper, mode);
+    this.activateWindow(windowId);
+    this.updateDockToggle(windowId);
+  }
+
+  private applyDockedLayout(wrapper: HTMLElement, mode: 'left' | 'right') {
+    const width = Math.max(Math.floor(window.innerWidth / 2), Math.min(AIMultiWindow.MIN_WINDOW_WIDTH, window.innerWidth));
+    wrapper.style.top = '0px';
+    wrapper.style.left = mode === 'left' ? '0px' : `${Math.max(0, window.innerWidth - width)}px`;
+    wrapper.style.width = `${width}px`;
+    wrapper.style.height = `${window.innerHeight}px`;
+  }
+
+  private toggleFullscreen(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+    const wrapper = entry.element;
+    if (wrapper.classList.contains('fullscreen')) {
+      this.restoreWindowLayout(windowId, wrapper);
+      return;
+    }
+
+    wrapper.classList.remove('minimized');
+    this.saveWindowLayout(windowId, wrapper);
+    wrapper.classList.remove('docked', 'docked-left', 'docked-right');
+    wrapper.classList.add('fullscreen');
+    wrapper.style.left = '0px';
+    wrapper.style.top = '0px';
+    wrapper.style.width = `${window.innerWidth}px`;
+    wrapper.style.height = `${window.innerHeight}px`;
+    this.activateWindow(windowId);
+    this.updateDockToggle(windowId);
+  }
+
+  private snapWindow(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry || entry.element.classList.contains('minimized')) {
+      return;
+    }
+    const wrapper = entry.element;
+    const distanceToRight = window.innerWidth - (wrapper.offsetLeft + wrapper.offsetWidth);
+    if (wrapper.offsetTop <= AIMultiWindow.SNAP_THRESHOLD) {
+      this.toggleFullscreen(windowId);
+      return;
+    }
+    if (wrapper.offsetLeft <= AIMultiWindow.SNAP_THRESHOLD) {
+      this.dockWindow(windowId, 'left');
+      return;
+    }
+    if (distanceToRight <= AIMultiWindow.SNAP_THRESHOLD) {
+      this.dockWindow(windowId, 'right');
+    }
+  }
+
+  private refreshViewportSizedWindow(wrapper: HTMLElement): boolean {
+    if (wrapper.classList.contains('fullscreen')) {
+      wrapper.style.left = '0px';
+      wrapper.style.top = '0px';
+      wrapper.style.width = `${window.innerWidth}px`;
+      wrapper.style.height = `${window.innerHeight}px`;
+      return true;
+    }
+    if (wrapper.classList.contains('docked-left')) {
+      this.applyDockedLayout(wrapper, 'left');
+      return true;
+    }
+    if (wrapper.classList.contains('docked-right')) {
+      this.applyDockedLayout(wrapper, 'right');
+      return true;
+    }
+    return false;
+  }
+
+  private getDockModeForWindow(wrapper: HTMLElement): 'left' | 'right' {
+    if (wrapper.classList.contains('docked-left')) {
+      return 'right';
+    }
+    if (wrapper.classList.contains('docked-right')) {
+      return 'left';
+    }
+    const center = wrapper.offsetLeft + wrapper.offsetWidth / 2;
+    return center <= window.innerWidth / 2 ? 'left' : 'right';
+  }
+
+  private updateDockToggle(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+    const button = entry.element.querySelector('.ai-dock-toggle-btn') as HTMLButtonElement | null;
+    if (!button) {
+      return;
+    }
+    const mode = this.getDockModeForWindow(entry.element);
+    const label = mode === 'left' ? t('content__btnDockLeft') : t('content__btnDockRight');
+    button.dataset.dockMode = mode;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.innerHTML = this.getDockIconSvg(mode);
+  }
+
+  private getDockIconSvg(mode: 'left' | 'right') {
+    const accentPath = mode === 'left'
+      ? '<path d="M8 8v8"></path>'
+      : '<path d="M16 8v8"></path>';
+    return `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+        <path d="M12 4v16"></path>
+        ${accentPath}
+      </svg>
+    `;
   }
 
   private ensureSettingsPanelSpace(wrapper: HTMLElement) {
@@ -453,6 +632,9 @@ class AIMultiWindow {
 
   private bindViewportClamp(wrapper: HTMLElement): () => void {
     const onResize = () => {
+      if (this.refreshViewportSizedWindow(wrapper)) {
+        return;
+      }
       this.clampWindowToViewport(wrapper);
     };
 
@@ -465,12 +647,13 @@ class AIMultiWindow {
   private makeDraggable(wrapper: HTMLElement): () => void {
     const header = wrapper.querySelector('.ai-window-header') as HTMLElement;
     let dragging = false;
+    let activePointerId: number | null = null;
     let startX = 0;
     let startY = 0;
     let initialX = 0;
     let initialY = 0;
 
-    const onMouseDown = (event: MouseEvent) => {
+    const onPointerDown = (event: PointerEvent) => {
       if (
         (event.target as HTMLElement).closest('.ai-window-controls') ||
         (event.target as HTMLElement).closest('.ai-resize-handle')
@@ -479,14 +662,25 @@ class AIMultiWindow {
       }
       event.preventDefault();
       dragging = true;
+      activePointerId = event.pointerId;
       startX = event.clientX;
       startY = event.clientY;
       initialX = wrapper.offsetLeft;
       initialY = wrapper.offsetTop;
+      if (wrapper.classList.contains('docked') || wrapper.classList.contains('fullscreen')) {
+        wrapper.classList.remove('docked', 'docked-left', 'docked-right', 'fullscreen');
+        wrapper.style.width = `${Math.min(AIMultiWindow.DEFAULT_WINDOW_WIDTH, window.innerWidth)}px`;
+        wrapper.style.height = `${Math.min(AIMultiWindow.DEFAULT_WINDOW_HEIGHT, window.innerHeight)}px`;
+        initialX = this.clamp(event.clientX - wrapper.offsetWidth / 2, 0, Math.max(0, window.innerWidth - wrapper.offsetWidth));
+        initialY = this.clamp(event.clientY - 24, 0, Math.max(0, window.innerHeight - wrapper.offsetHeight));
+        wrapper.style.left = `${initialX}px`;
+        wrapper.style.top = `${initialY}px`;
+      }
+      header.setPointerCapture(event.pointerId);
     };
 
-    const onMouseMove = (event: MouseEvent) => {
-      if (!dragging) {
+    const onPointerMove = (event: PointerEvent) => {
+      if (!dragging || event.pointerId !== activePointerId) {
         return;
       }
       const nextLeft = initialX + event.clientX - startX;
@@ -497,24 +691,37 @@ class AIMultiWindow {
       wrapper.style.top = `${this.clamp(nextTop, 0, maxTop)}px`;
     };
 
-    const onMouseUp = () => {
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== activePointerId) {
+        return;
+      }
       dragging = false;
+      activePointerId = null;
+      if (header.hasPointerCapture(event.pointerId)) {
+        header.releasePointerCapture(event.pointerId);
+      }
+      this.snapWindow(wrapper.id);
+      this.updateDockToggle(wrapper.id);
     };
 
-    header.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    header.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
 
     return () => {
-      header.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+      header.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
   }
 
   private makeResizable(wrapper: HTMLElement): () => void {
     const handles = [...wrapper.querySelectorAll<HTMLElement>('.ai-resize-handle')];
     let resizing = false;
+    let activePointerId: number | null = null;
+    let activeHandle: HTMLElement | null = null;
     let direction = '';
     let startX = 0;
     let startY = 0;
@@ -524,21 +731,15 @@ class AIMultiWindow {
     let startTop = 0;
 
     const minWidth = () => {
-      return Math.max(
-        AIMultiWindow.MIN_WINDOW_WIDTH,
-        parseFloat(window.getComputedStyle(wrapper).minWidth) || 0
-      );
+      return parseFloat(window.getComputedStyle(wrapper).minWidth) || AIMultiWindow.MIN_WINDOW_WIDTH;
     };
 
     const minHeight = () => {
-      return Math.max(
-        AIMultiWindow.MIN_WINDOW_HEIGHT,
-        parseFloat(window.getComputedStyle(wrapper).minHeight) || 0
-      );
+      return parseFloat(window.getComputedStyle(wrapper).minHeight) || AIMultiWindow.MIN_WINDOW_HEIGHT;
     };
 
-    const onMouseMove = (event: MouseEvent) => {
-      if (!resizing) {
+    const onPointerMove = (event: PointerEvent) => {
+      if (!resizing || event.pointerId !== activePointerId) {
         return;
       }
 
@@ -570,18 +771,29 @@ class AIMultiWindow {
       this.clampWindowToViewport(wrapper);
     };
 
-    const onMouseUp = () => {
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== activePointerId) {
+        return;
+      }
       resizing = false;
+      if (activeHandle?.hasPointerCapture(event.pointerId)) {
+        activeHandle.releasePointerCapture(event.pointerId);
+      }
+      activePointerId = null;
+      activeHandle = null;
       direction = '';
+      this.updateDockToggle(wrapper.id);
     };
 
-    const onHandleMouseDown = (event: MouseEvent) => {
-      if (wrapper.classList.contains('minimized')) {
+    const onHandlePointerDown = (event: PointerEvent) => {
+      if (wrapper.classList.contains('minimized') || wrapper.classList.contains('fullscreen')) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
       resizing = true;
+      activePointerId = event.pointerId;
+      activeHandle = event.currentTarget as HTMLElement;
       direction = (event.currentTarget as HTMLElement).dataset.direction || '';
       startX = event.clientX;
       startY = event.clientY;
@@ -589,20 +801,23 @@ class AIMultiWindow {
       startHeight = wrapper.offsetHeight;
       startLeft = wrapper.offsetLeft;
       startTop = wrapper.offsetTop;
+      activeHandle.setPointerCapture(event.pointerId);
     };
 
     handles.forEach((handle) => {
-      handle.addEventListener('mousedown', onHandleMouseDown);
+      handle.addEventListener('pointerdown', onHandlePointerDown);
     });
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
 
     return () => {
       handles.forEach((handle) => {
-        handle.removeEventListener('mousedown', onHandleMouseDown);
+        handle.removeEventListener('pointerdown', onHandlePointerDown);
       });
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
     };
   }
 }

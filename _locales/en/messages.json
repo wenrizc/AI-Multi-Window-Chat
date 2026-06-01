@@ -191,6 +191,70 @@
     "message": "Export successful",
     "description": "Export successful"
   },
+  "history__searchPlaceholder": {
+    "message": "Search title, message, or model",
+    "description": "History search input placeholder"
+  },
+  "history__searchNoResults": {
+    "message": "No matching conversations",
+    "description": "History search empty state"
+  },
+  "onboarding__kicker": {
+    "message": "First run",
+    "description": "Onboarding eyebrow text"
+  },
+  "onboarding__title": {
+    "message": "Set up your first AI window",
+    "description": "Onboarding title"
+  },
+  "onboarding__intro": {
+    "message": "Pick a provider, add your key and model, then test the connection. We will open a sample chat when everything is ready.",
+    "description": "Onboarding introduction"
+  },
+  "onboarding__stepProvider": {
+    "message": "Choose a provider preset",
+    "description": "Onboarding provider step"
+  },
+  "onboarding__stepCredentials": {
+    "message": "Add API key and model",
+    "description": "Onboarding credentials step"
+  },
+  "onboarding__stepLaunch": {
+    "message": "Test and launch",
+    "description": "Onboarding launch step"
+  },
+  "onboarding__launchCopy": {
+    "message": "A successful test saves this as your default provider and opens a starter chat in the current tab.",
+    "description": "Onboarding launch explanation"
+  },
+  "onboarding__skip": {
+    "message": "Set up manually",
+    "description": "Onboarding skip button"
+  },
+  "onboarding__saveTestLaunch": {
+    "message": "Save, test, and launch",
+    "description": "Onboarding primary action"
+  },
+  "onboarding__statusMissingFields": {
+    "message": "Add an API key and model name first.",
+    "description": "Onboarding missing fields status"
+  },
+  "onboarding__statusTesting": {
+    "message": "Testing connection...",
+    "description": "Onboarding testing status"
+  },
+  "onboarding__statusReady": {
+    "message": "Provider saved. Sample chat opened.",
+    "description": "Onboarding completed status"
+  },
+  "onboarding__statusSavedOpenFailed": {
+    "message": "Provider saved, but open a normal webpage before launching the sample chat.",
+    "description": "Onboarding saved but sample chat failed"
+  },
+  "onboarding__samplePrompt": {
+    "message": "Hi! Give me three quick ways to use AI Multi-Window Chat on this page.",
+    "description": "Sample prompt opened after onboarding"
+  },
   "chat__welcome": {
     "message": "Start Chatting",
     "description": "Welcome message"
@@ -362,7 +426,7 @@
     "description": "Generating status"
   },
   "chat__statusDecidingSearch": {
-    "message": "Deciding whether search is needed...",
+    "message": "Generating response...",
     "description": "Search decision status"
   },
   "chat__statusSearchingFor": {
@@ -441,6 +505,14 @@
     "message": "Responses",
     "description": "Responses transport option"
   },
+  "popup__transportHelp": {
+    "message": "<p><strong>Chat Completions</strong>: use this for classic OpenAI-compatible chat endpoints that accept a messages array.</p><p><strong>Responses</strong>: use this for the OpenAI Responses API and newer reasoning or tool-calling workflows.</p>",
+    "description": "Transport hover help"
+  },
+  "popup__transportHelpAriaLabel": {
+    "message": "Transport help",
+    "description": "Accessible label for transport help tooltip"
+  },
   "popup__labelReasoningFormat": {
     "message": "Reasoning Format",
     "description": "Reasoning format label"
@@ -460,6 +532,10 @@
   "popup__reasoningFormatHelp": {
     "message": "<p><strong>None</strong>: no separate reasoning field; use this for most normal chat-completions services.</p><p><strong>OpenAI Summary</strong>: reads reasoning summaries from the OpenAI Responses API; commonly used with OpenAI reasoning models.</p><p><strong>reasoning_content</strong>: reads the extra reasoning_content field; commonly used by DeepSeek, Qwen, and OpenAI-compatible services that expose chain-of-thought-like reasoning separately.</p>",
     "description": "Reasoning format hover help"
+  },
+  "popup__reasoningFormatHelpAriaLabel": {
+    "message": "Reasoning format help",
+    "description": "Accessible label for reasoning format tooltip"
   },
   "popup__supportsStreaming": {
     "message": "Enable Streaming",
@@ -572,6 +648,18 @@
   "content__btnSettings": {
     "message": "Settings",
     "description": "Settings button in chat window header"
+  },
+  "content__btnDockLeft": {
+    "message": "Dock left",
+    "description": "Dock chat window to the left half"
+  },
+  "content__btnDockRight": {
+    "message": "Dock right",
+    "description": "Dock chat window to the right half"
+  },
+  "content__btnFullscreen": {
+    "message": "Fullscreen",
+    "description": "Fullscreen chat window button"
   },
   "content__btnMinimize": {
     "message": "Minimize",

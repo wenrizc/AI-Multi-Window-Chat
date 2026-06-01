@@ -19,6 +19,37 @@ import {
 } from '../shared/utils';
 
 type TabName = 'config' | 'search' | 'prompts' | 'history';
+type OnboardingPresetId = 'openai' | 'deepseek' | 'qwen';
+
+const ONBOARDING_PRESETS: Record<OnboardingPresetId, {
+  name: string;
+  baseUrl: string;
+  model: string;
+  transport: ProviderConfig['transport'];
+  reasoningFormat: ProviderConfig['modelCatalog'][number]['reasoningFormat'];
+}> = {
+  openai: {
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-5',
+    transport: 'responses',
+    reasoningFormat: 'openai_summary'
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+    transport: 'chat_completions',
+    reasoningFormat: 'none'
+  },
+  qwen: {
+    name: 'Qwen',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    transport: 'chat_completions',
+    reasoningFormat: 'none'
+  }
+};
 
 const elements = {
   tabs: [...document.querySelectorAll('.tab')] as HTMLButtonElement[],
@@ -65,8 +96,16 @@ const elements = {
   savePromptBtn: document.getElementById('savePromptBtn') as HTMLButtonElement,
   deletePromptBtn: document.getElementById('deletePromptBtn') as HTMLButtonElement,
   historyList: document.getElementById('historyList') as HTMLElement,
+  historySearchInput: document.getElementById('historySearchInput') as HTMLInputElement,
   exportAllBtn: document.getElementById('exportAllBtn') as HTMLButtonElement,
   clearAllBtn: document.getElementById('clearAllBtn') as HTMLButtonElement,
+  onboardingModal: document.getElementById('onboardingModal') as HTMLElement,
+  onboardingStatus: document.getElementById('onboardingStatus') as HTMLElement,
+  onboardingPresetButtons: [...document.querySelectorAll('[data-onboarding-preset]')] as HTMLButtonElement[],
+  onboardingApiKey: document.getElementById('onboardingApiKey') as HTMLInputElement,
+  onboardingModelName: document.getElementById('onboardingModelName') as HTMLInputElement,
+  onboardingSkipBtn: document.getElementById('onboardingSkipBtn') as HTMLButtonElement,
+  onboardingSaveTestBtn: document.getElementById('onboardingSaveTestBtn') as HTMLButtonElement,
   exportModal: document.getElementById('exportModal') as HTMLElement,
   confirmModal: document.getElementById('confirmModal') as HTMLElement,
   confirmText: document.getElementById('confirmText') as HTMLElement,
@@ -82,6 +121,8 @@ class PopupApp {
   private currentExportTarget: 'providers' | 'prompts' | 'history' = 'history';
   private currentExportChatId: string | 'all' = 'all';
   private apiKeyVisible = false;
+  private onboardingPresetId: OnboardingPresetId = 'openai';
+  private historySearchTerm = '';
 
   async init() {
     document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
@@ -97,6 +138,7 @@ class PopupApp {
     this.selectedProviderId = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? null;
     this.selectedPromptId = this.store.featureSettings.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
     this.renderAll();
+    this.maybeShowOnboarding();
   }
 
   private bindEvents() {
@@ -188,6 +230,24 @@ class PopupApp {
       this.showStatus(elements.historyStatus, t('history__successCleared'), 'success');
     }));
     elements.historyList.addEventListener('click', (event) => this.handleHistoryAction(event));
+    elements.historySearchInput.addEventListener('input', () => {
+      this.historySearchTerm = elements.historySearchInput.value.trim();
+      this.renderHistory();
+    });
+    elements.onboardingPresetButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        this.selectOnboardingPreset((button.dataset.onboardingPreset || 'openai') as OnboardingPresetId);
+      });
+    });
+    elements.onboardingSkipBtn.addEventListener('click', () => {
+      this.closeModal('onboardingModal');
+      elements.profileName.focus();
+    });
+    elements.onboardingSaveTestBtn.addEventListener('click', () => {
+      this.completeOnboarding().catch((error) => {
+        this.showStatus(elements.onboardingStatus, getErrorText(error), 'error');
+      });
+    });
     document.querySelectorAll('.modal-close').forEach((button) => {
       button.addEventListener('click', () => this.closeModal((button as HTMLElement).dataset.modal || ''));
     });
@@ -201,6 +261,112 @@ class PopupApp {
       this.closeModal('confirmModal');
     });
     elements.confirmCancelBtn.addEventListener('click', () => this.closeModal('confirmModal'));
+  }
+
+  private maybeShowOnboarding() {
+    if (this.store.providers.length > 0) {
+      return;
+    }
+    this.selectOnboardingPreset(this.onboardingPresetId);
+    this.openModal(elements.onboardingModal);
+  }
+
+  private selectOnboardingPreset(presetId: OnboardingPresetId) {
+    const preset = ONBOARDING_PRESETS[presetId] ?? ONBOARDING_PRESETS.openai;
+    this.onboardingPresetId = presetId in ONBOARDING_PRESETS ? presetId : 'openai';
+    elements.onboardingPresetButtons.forEach((button) => {
+      button.classList.toggle('active', button.dataset.onboardingPreset === this.onboardingPresetId);
+    });
+    elements.onboardingModelName.value = preset.model;
+    this.showOnboardingPreview(preset);
+  }
+
+  private showOnboardingPreview(preset: (typeof ONBOARDING_PRESETS)[OnboardingPresetId]) {
+    elements.profileName.value = preset.name;
+    elements.apiUrl.value = preset.baseUrl;
+    elements.modelName.value = preset.model;
+    elements.transportSelect.value = preset.transport;
+    elements.reasoningFormatSelect.value = preset.reasoningFormat;
+    elements.supportsStreamingCheckbox.checked = true;
+    elements.maxContextMessagesInput.value = '';
+    elements.temperatureInput.value = '';
+  }
+
+  private async completeOnboarding() {
+    const provider = this.buildOnboardingProvider();
+    if (!provider.apiKey || !provider.defaultModel) {
+      this.showStatus(elements.onboardingStatus, t('onboarding__statusMissingFields'), 'error');
+      return;
+    }
+
+    elements.onboardingSaveTestBtn.disabled = true;
+    this.showStatus(elements.onboardingStatus, t('onboarding__statusTesting'), 'success');
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'TEST_PROVIDER',
+        provider
+      });
+      if (!response?.success) {
+        throw new Error(response?.error || t('common__unknownError'));
+      }
+
+      this.store.providers.unshift(provider);
+      this.store.featureSettings.defaultProviderId = provider.id;
+      this.selectedProviderId = provider.id;
+      await this.persist();
+      this.closeModal('onboardingModal');
+      try {
+        await this.openOnboardingSampleChat();
+        this.showStatus(elements.status, t('onboarding__statusReady'), 'success');
+      } catch {
+        this.showStatus(elements.status, t('onboarding__statusSavedOpenFailed'), 'error');
+      }
+    } catch (error) {
+      this.showStatus(elements.onboardingStatus, t('popup__statusTestFailed', getErrorText(error)), 'error');
+    } finally {
+      elements.onboardingSaveTestBtn.disabled = false;
+    }
+  }
+
+  private buildOnboardingProvider(): ProviderConfig {
+    const preset = ONBOARDING_PRESETS[this.onboardingPresetId] ?? ONBOARDING_PRESETS.openai;
+    const now = nowIso();
+    const modelId = elements.onboardingModelName.value.trim() || preset.model;
+    return {
+      id: uid('provider'),
+      name: preset.name,
+      baseUrl: preset.baseUrl,
+      apiKey: elements.onboardingApiKey.value.trim(),
+      transport: preset.transport,
+      defaultModel: modelId,
+      defaultGenerationParams: {
+        temperature: null
+      },
+      headers: {},
+      modelCatalog: [
+        {
+          modelId,
+          displayName: modelId,
+          supportsStreaming: true,
+          maxContextMessages: null,
+          reasoningFormat: preset.reasoningFormat
+        }
+      ],
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  private async openOnboardingSampleChat() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      throw new Error(t('history__errorOpenFailed') + t('common__unknownError'));
+    }
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'OPEN_CHAT_WINDOW',
+      initialMessage: t('onboarding__samplePrompt')
+    });
   }
 
   private switchTab(name: TabName) {
@@ -553,7 +719,12 @@ class PopupApp {
       elements.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon">💬</div><div>${escapeHtml(t('history__empty'))}</div></div>`;
       return;
     }
-    elements.historyList.innerHTML = this.store.chatHistory.map((chat) => `
+    const filteredHistory = this.getFilteredHistory();
+    if (filteredHistory.length === 0) {
+      elements.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon">🔎</div><div>${escapeHtml(t('history__searchNoResults'))}</div></div>`;
+      return;
+    }
+    elements.historyList.innerHTML = filteredHistory.map((chat) => `
       <div class="history-item" data-id="${chat.chatId}">
         <div class="history-item-header">
           <div class="history-item-icon">💬</div>
@@ -568,6 +739,27 @@ class PopupApp {
         </div>
       </div>
     `).join('');
+  }
+
+  private getFilteredHistory() {
+    const query = compactText(this.historySearchTerm)?.toLowerCase();
+    if (!query) {
+      return this.store.chatHistory;
+    }
+
+    return this.store.chatHistory.filter((chat) => {
+      const haystack = [
+        chat.title,
+        chat.providerId ?? '',
+        chat.promptId ?? '',
+        this.getHistorySummary(chat),
+        ...chat.messages.flatMap((message) => [
+          message.content,
+          message.modelId ?? ''
+        ])
+      ].join('\n').toLowerCase();
+      return haystack.includes(query);
+    });
   }
 
   private getHistorySummary(chat: RootStore['chatHistory'][number]) {
@@ -716,6 +908,13 @@ function parseImportPayload(text: string): unknown {
   }
 
   throw new Error('Unsupported import format.');
+}
+
+function getErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error || t('common__unknownError'));
 }
 
 function formatPayloadMarkdown(title: string, payload: unknown): string {
