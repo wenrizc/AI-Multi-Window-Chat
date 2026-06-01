@@ -7,12 +7,15 @@ import type {
 } from '../shared/types';
 import {
   clampSearchRounds,
+  compactText,
   escapeHtml,
+  normalizeMaxContextMessages,
   nowIso,
   resolveReasoningFormat,
   toNullableInt,
   toNullableNumber,
-  uid
+  uid,
+  writeTextToClipboard
 } from '../shared/utils';
 
 type TabName = 'config' | 'search' | 'prompts' | 'history';
@@ -44,14 +47,13 @@ const elements = {
   transportSelect: document.getElementById('transportSelect') as HTMLSelectElement,
   reasoningFormatSelect: document.getElementById('reasoningFormatSelect') as HTMLSelectElement,
   supportsStreamingCheckbox: document.getElementById('supportsStreamingCheckbox') as HTMLInputElement,
+  maxContextMessagesInput: document.getElementById('maxContextMessagesInput') as HTMLInputElement,
   temperatureInput: document.getElementById('temperatureInput') as HTMLInputElement,
   tavilyApiKey: document.getElementById('tavilyApiKey') as HTMLInputElement,
   searchDepthSelect: document.getElementById('searchDepthSelect') as HTMLSelectElement,
   timeRangeSelect: document.getElementById('timeRangeSelect') as HTMLSelectElement,
   maxResultsInput: document.getElementById('maxResultsInput') as HTMLInputElement,
   maxRoundsInput: document.getElementById('maxRoundsInput') as HTMLInputElement,
-  searchEnabledByDefaultCheckbox: document.getElementById('searchEnabledByDefaultCheckbox') as HTMLInputElement,
-  defaultStreamingCheckbox: document.getElementById('defaultStreamingCheckbox') as HTMLInputElement,
   promptList: document.getElementById('promptList') as HTMLElement,
   addPromptBtn: document.getElementById('addPromptBtn') as HTMLButtonElement,
   exportPromptsBtn: document.getElementById('exportPromptsBtn') as HTMLButtonElement,
@@ -77,6 +79,7 @@ class PopupApp {
   private selectedProviderId: string | null = null;
   private selectedPromptId: string | null = null;
   private confirmAction: (() => void | Promise<void>) | null = null;
+  private currentExportTarget: 'providers' | 'prompts' | 'history' = 'history';
   private currentExportChatId: string | 'all' = 'all';
   private apiKeyVisible = false;
 
@@ -90,6 +93,7 @@ class PopupApp {
 
     this.bindEvents();
     this.store = await getStore();
+    this.enforceFixedDefaults();
     this.selectedProviderId = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? null;
     this.selectedPromptId = this.store.featureSettings.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
     this.renderAll();
@@ -104,7 +108,10 @@ class PopupApp {
     elements.deleteBtn.addEventListener('click', () => this.confirmDeleteProvider());
     elements.setActiveBtn.addEventListener('click', () => this.setDefaultProvider());
     elements.testBtn.addEventListener('click', () => this.testProvider());
-    elements.exportProfilesBtn.addEventListener('click', () => this.exportProviders());
+    elements.exportProfilesBtn.addEventListener('click', () => {
+      this.currentExportTarget = 'providers';
+      this.openModal(elements.exportModal);
+    });
     elements.importProfilesBtn.addEventListener('click', () => elements.importProfilesInput.click());
     elements.importProfilesInput.addEventListener('change', () => this.importProviders());
     elements.activeProfileSelect.addEventListener('change', () => {
@@ -130,8 +137,10 @@ class PopupApp {
       elements.toggleApiKeyBtn.textContent = this.apiKeyVisible ? t('popup__btnHideKey') : t('popup__btnShowKey');
     });
     elements.copyApiKeyBtn.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(elements.apiKey.value);
-      this.showStatus(elements.status, t('popup__statusCopied'), 'success');
+      const copied = await writeTextToClipboard(elements.apiKey.value);
+      if (copied) {
+        this.showStatus(elements.status, t('popup__statusCopied'), 'success');
+      }
     });
 
     [
@@ -139,9 +148,7 @@ class PopupApp {
       elements.searchDepthSelect,
       elements.timeRangeSelect,
       elements.maxResultsInput,
-      elements.maxRoundsInput,
-      elements.searchEnabledByDefaultCheckbox,
-      elements.defaultStreamingCheckbox
+      elements.maxRoundsInput
     ].forEach((element) => {
       element.addEventListener('change', () => {
         this.saveSearchSettings().catch((error) => console.error(error));
@@ -151,7 +158,10 @@ class PopupApp {
     elements.addPromptBtn.addEventListener('click', () => this.createPrompt());
     elements.savePromptBtn.addEventListener('click', () => this.savePrompt());
     elements.deletePromptBtn.addEventListener('click', () => this.confirmDeletePrompt());
-    elements.exportPromptsBtn.addEventListener('click', () => this.exportPrompts());
+    elements.exportPromptsBtn.addEventListener('click', () => {
+      this.currentExportTarget = 'prompts';
+      this.openModal(elements.exportModal);
+    });
     elements.importPromptsBtn.addEventListener('click', () => elements.importPromptsInput.click());
     elements.importPromptsInput.addEventListener('change', () => this.importPrompts());
     elements.defaultPromptSelect.addEventListener('change', () => {
@@ -167,6 +177,7 @@ class PopupApp {
     });
 
     elements.exportAllBtn.addEventListener('click', () => {
+      this.currentExportTarget = 'history';
       this.currentExportChatId = 'all';
       this.openModal(elements.exportModal);
     });
@@ -181,7 +192,7 @@ class PopupApp {
       button.addEventListener('click', () => this.closeModal((button as HTMLElement).dataset.modal || ''));
     });
     document.querySelectorAll('.export-option').forEach((option) => {
-      option.addEventListener('click', () => this.exportHistory((option as HTMLElement).dataset.format || 'markdown'));
+      option.addEventListener('click', () => this.exportCurrent((option as HTMLElement).dataset.format || 'markdown'));
     });
     elements.confirmBtn.addEventListener('click', async () => {
       if (this.confirmAction) {
@@ -198,8 +209,24 @@ class PopupApp {
   }
 
   private async persist() {
+    this.enforceFixedDefaults();
     await saveStore(this.store);
     this.renderAll();
+  }
+
+  private enforceFixedDefaults() {
+    this.store.featureSettings.search.enabledByDefault = false;
+    this.store.featureSettings.defaultStreaming = false;
+    this.store.providers.forEach((provider) => {
+      provider.modelCatalog.forEach((model) => {
+        if (typeof model.supportsStreaming !== 'boolean') {
+          model.supportsStreaming = true;
+        }
+        if (model.maxContextMessages === undefined) {
+          model.maxContextMessages = null;
+        }
+      });
+    });
   }
 
   private renderAll() {
@@ -245,6 +272,9 @@ class PopupApp {
     elements.transportSelect.value = provider.transport;
     elements.reasoningFormatSelect.value = model?.reasoningFormat ?? 'none';
     elements.supportsStreamingCheckbox.checked = model?.supportsStreaming ?? true;
+    elements.maxContextMessagesInput.value = model?.maxContextMessages === null || model?.maxContextMessages === undefined
+      ? ''
+      : String(model.maxContextMessages);
     elements.temperatureInput.value = provider.defaultGenerationParams.temperature?.toString() ?? '';
   }
 
@@ -254,6 +284,7 @@ class PopupApp {
       elements.apiUrl,
       elements.apiKey,
       elements.modelName,
+      elements.maxContextMessagesInput,
       elements.temperatureInput
     ].forEach((input) => { input.value = ''; });
     elements.transportSelect.value = 'chat_completions';
@@ -268,20 +299,18 @@ class PopupApp {
     elements.timeRangeSelect.value = search.timeRange ?? '';
     elements.maxResultsInput.value = String(search.maxResults);
     elements.maxRoundsInput.value = String(search.maxRounds);
-    elements.searchEnabledByDefaultCheckbox.checked = search.enabledByDefault;
-    elements.defaultStreamingCheckbox.checked = this.store.featureSettings.defaultStreaming;
   }
 
   private async saveSearchSettings() {
     this.store.featureSettings.search = {
       tavilyApiKey: elements.tavilyApiKey.value.trim(),
-      enabledByDefault: elements.searchEnabledByDefaultCheckbox.checked,
+      enabledByDefault: false,
       searchDepth: elements.searchDepthSelect.value as 'basic' | 'advanced',
       timeRange: (elements.timeRangeSelect.value || null) as 'day' | 'week' | 'month' | 'year' | null,
       maxResults: Math.max(1, toNullableInt(elements.maxResultsInput.value) ?? 5),
       maxRounds: clampSearchRounds(toNullableInt(elements.maxRoundsInput.value))
     };
-    this.store.featureSettings.defaultStreaming = elements.defaultStreamingCheckbox.checked;
+    this.store.featureSettings.defaultStreaming = false;
     await saveStore(this.store);
     this.showStatus(elements.searchStatus, t('popup__statusSaved'), 'success');
   }
@@ -305,6 +334,7 @@ class PopupApp {
           modelId: '',
           displayName: '',
           supportsStreaming: true,
+          maxContextMessages: null,
           reasoningFormat: 'none'
         }
       ],
@@ -339,6 +369,7 @@ class PopupApp {
           modelId: elements.modelName.value.trim(),
           displayName: elements.modelName.value.trim(),
           supportsStreaming: elements.supportsStreamingCheckbox.checked,
+          maxContextMessages: normalizeMaxContextMessages(elements.maxContextMessagesInput.value),
           reasoningFormat: resolveReasoningFormat(elements.reasoningFormatSelect.value)
         }
       ],
@@ -393,25 +424,19 @@ class PopupApp {
     }
   }
 
-  private async exportProviders() {
-    this.downloadJson('providers-v2.json', {
-      providers: this.store.providers,
-      featureSettings: this.store.featureSettings
-    });
-  }
-
   private async importProviders() {
     const file = elements.importProfilesInput.files?.[0];
     if (!file) return;
     const text = await file.text();
     elements.importProfilesInput.value = '';
-    const parsed = JSON.parse(text) as { providers?: ProviderConfig[]; featureSettings?: FeatureSettings };
+    const parsed = parseImportPayload(text) as { providers?: ProviderConfig[]; featureSettings?: FeatureSettings };
     if (Array.isArray(parsed.providers)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
         this.store.providers = parsed.providers ? [...parsed.providers] : [];
         if (parsed.featureSettings) {
           this.store.featureSettings = parsed.featureSettings;
         }
+        this.enforceFixedDefaults();
         this.selectedProviderId = this.store.providers[0]?.id ?? null;
         await this.persist();
         this.showStatus(
@@ -500,17 +525,10 @@ class PopupApp {
     });
   }
 
-  private exportPrompts() {
-    this.downloadJson('prompts-v2.json', {
-      prompts: this.store.prompts,
-      defaultPromptId: this.store.featureSettings.defaultPromptId
-    });
-  }
-
   private async importPrompts() {
     const file = elements.importPromptsInput.files?.[0];
     if (!file) return;
-    const parsed = JSON.parse(await file.text()) as { prompts?: PromptConfig[]; defaultPromptId?: string | null };
+    const parsed = parseImportPayload(await file.text()) as { prompts?: PromptConfig[]; defaultPromptId?: string | null };
     elements.importPromptsInput.value = '';
     if (Array.isArray(parsed.prompts)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
@@ -542,6 +560,7 @@ class PopupApp {
           <div class="history-item-title">${escapeHtml(chat.title)}</div>
         </div>
         <div class="history-item-meta">${new Date(chat.updatedAt).toLocaleString()} · ${escapeHtml(t('history__messageCount', chat.messages.length))}</div>
+        <div class="history-item-summary">${escapeHtml(this.getHistorySummary(chat))}</div>
         <div class="history-item-actions">
           <button class="btn btn-secondary btn-small" data-action="resume" data-id="${chat.chatId}">${escapeHtml(t('history__btnResume'))}</button>
           <button class="btn btn-secondary btn-small" data-action="export" data-id="${chat.chatId}">${escapeHtml(t('history__btnExport'))}</button>
@@ -549,6 +568,11 @@ class PopupApp {
         </div>
       </div>
     `).join('');
+  }
+
+  private getHistorySummary(chat: RootStore['chatHistory'][number]) {
+    const candidate = [...chat.messages].reverse().find((message) => compactText(message.content));
+    return compactText(candidate?.content)?.replace(/\s+/g, ' ').slice(0, 120) || chat.title;
   }
 
   private async handleHistoryAction(event: Event) {
@@ -571,6 +595,7 @@ class PopupApp {
       return;
     }
     if (action === 'export') {
+      this.currentExportTarget = 'history';
       this.currentExportChatId = chatId;
       this.openModal(elements.exportModal);
       return;
@@ -585,19 +610,39 @@ class PopupApp {
     }
   }
 
+  private exportCurrent(format: string) {
+    if (this.currentExportTarget === 'providers') {
+      this.exportPayload(format, 'providers-v2', {
+        providers: this.store.providers,
+        featureSettings: this.store.featureSettings
+      });
+      this.closeModal('exportModal');
+      this.showStatus(elements.status, t('history__successExported'), 'success');
+      return;
+    }
+
+    if (this.currentExportTarget === 'prompts') {
+      this.exportPayload(format, 'prompts-v2', {
+        prompts: this.store.prompts,
+        defaultPromptId: this.store.featureSettings.defaultPromptId
+      });
+      this.closeModal('exportModal');
+      this.showStatus(elements.promptStatus, t('history__successExported'), 'success');
+      return;
+    }
+
+    this.exportHistory(format);
+  }
+
   private exportHistory(format: string) {
     const chats = this.currentExportChatId === 'all'
       ? this.store.chatHistory
       : this.store.chatHistory.filter((item) => item.chatId === this.currentExportChatId);
-    const content = format === 'text' ? this.exportAsText(chats) : this.exportAsMarkdown(chats);
-    const extension = format === 'text' ? 'txt' : 'md';
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `chat-history.${extension}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (format === 'json') {
+      this.downloadFile('chat-history.json', JSON.stringify({ chatHistory: chats }, null, 2), 'application/json;charset=utf-8');
+    } else {
+      this.downloadFile('chat-history.md', this.exportAsMarkdown(chats), 'text/markdown;charset=utf-8');
+    }
     this.closeModal('exportModal');
     this.showStatus(elements.historyStatus, t('history__successExported'), 'success');
   }
@@ -620,18 +665,6 @@ class PopupApp {
     }).join('\n\n---\n\n');
   }
 
-  private exportAsText(chats: RootStore['chatHistory']) {
-    return chats.map((chat) => {
-      const lines = [chat.title, `${t('export__updatedAt')}: ${chat.updatedAt}`, ''];
-      for (const message of chat.messages) {
-        lines.push(`[${message.role === 'user' ? t('chat__roleUser') : t('chat__roleAI')}]`);
-        lines.push(message.content);
-        lines.push('');
-      }
-      return lines.join('\n');
-    }).join('\n\n====================\n\n');
-  }
-
   private confirm(text: string, action: () => void | Promise<void>) {
     elements.confirmText.textContent = text;
     this.confirmAction = action;
@@ -652,8 +685,16 @@ class PopupApp {
     window.setTimeout(() => target.classList.remove('show'), 2200);
   }
 
-  private downloadJson(name: string, payload: unknown) {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  private exportPayload(format: string, basename: string, payload: unknown) {
+    if (format === 'json') {
+      this.downloadFile(`${basename}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+      return;
+    }
+    this.downloadFile(`${basename}.md`, formatPayloadMarkdown(basename, payload), 'text/markdown;charset=utf-8');
+  }
+
+  private downloadFile(name: string, content: string, type: string) {
+    const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -661,6 +702,31 @@ class PopupApp {
     link.click();
     URL.revokeObjectURL(url);
   }
+}
+
+function parseImportPayload(text: string): unknown {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return JSON.parse(trimmed);
+  }
+
+  const fencedJson = trimmed.match(/```json\s*([\s\S]*?)```/i);
+  if (fencedJson) {
+    return JSON.parse(fencedJson[1].trim());
+  }
+
+  throw new Error('Unsupported import format.');
+}
+
+function formatPayloadMarkdown(title: string, payload: unknown): string {
+  return [
+    `# ${title}`,
+    '',
+    '```json',
+    JSON.stringify(payload, null, 2),
+    '```',
+    ''
+  ].join('\n');
 }
 
 new PopupApp().init().catch((error) => {

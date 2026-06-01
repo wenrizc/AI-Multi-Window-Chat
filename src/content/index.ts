@@ -1,4 +1,5 @@
 import type { ChatSession } from '../shared/types';
+import { escapeHtml, uid } from '../shared/utils';
 
 declare global {
   interface Window {
@@ -7,12 +8,23 @@ declare global {
 }
 
 class AIMultiWindow {
+  private static readonly DEFAULT_WINDOW_WIDTH = 460;
+  private static readonly DEFAULT_WINDOW_HEIGHT = 620;
   private static readonly MIN_WINDOW_WIDTH = 350;
   private static readonly MIN_WINDOW_HEIGHT = 400;
+  private static readonly SETTINGS_PANEL_WINDOW_WIDTH = 390;
+  private static readonly WINDOW_Z_INDEX_BASE = 2147483000;
   private windows = new Map<string, {
+    chatId: string;
     element: HTMLElement;
+    iframe: HTMLIFrameElement;
+    titleDisplay: HTMLElement;
+    titleInput: HTMLInputElement;
     cleanup: () => void;
   }>();
+  private windowStack: string[] = [];
+  private windowTitles = new Map<string, string>();
+  private nextFreshWindowNumber = 1;
   private counter = 0;
 
   constructor() {
@@ -116,7 +128,7 @@ class AIMultiWindow {
         const selectedText = window.getSelection()?.toString().trim() || '';
         this.createChatWindow(selectedText);
       }
-      if (event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'w') {
+      if (event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'm') {
         event.preventDefault();
         this.closeLastWindow();
       }
@@ -124,29 +136,165 @@ class AIMultiWindow {
   }
 
   private closeLastWindow() {
-    const keys = [...this.windows.keys()];
-    if (keys.length === 0) {
+    const lastWindowId = this.windowStack.pop();
+    if (!lastWindowId) {
       return;
     }
-    const lastKey = keys[keys.length - 1];
-    const entry = this.windows.get(lastKey);
-    if (entry) {
-      this.windows.delete(lastKey);
-      entry.cleanup();
-      entry.element.remove();
+    this.closeWindow(lastWindowId);
+  }
+
+  private closeWindow(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      this.syncWindowStack();
+      return;
     }
+
+    this.windows.delete(windowId);
+    this.windowStack = this.windowStack.filter((id) => id !== windowId);
+    this.windowTitles.delete(windowId);
+    entry.cleanup();
+    entry.element.remove();
+    this.syncWindowStack();
+  }
+
+  private activateWindow(windowId: string) {
+    if (!this.windows.has(windowId)) {
+      return;
+    }
+
+    this.windowStack = this.windowStack.filter((id) => id !== windowId);
+    this.windowStack.push(windowId);
+    this.syncWindowStack();
+  }
+
+  private syncWindowStack() {
+    this.windowStack = this.windowStack.filter((id) => this.windows.has(id));
+    this.windowStack.forEach((id, index) => {
+      const entry = this.windows.get(id);
+      if (!entry) {
+        return;
+      }
+      entry.element.style.zIndex = String(AIMultiWindow.WINDOW_Z_INDEX_BASE + index);
+    });
+  }
+
+  private createDefaultWindowTitle() {
+    const title = t('content__aiChatTitle', { number: String(this.nextFreshWindowNumber) });
+    this.nextFreshWindowNumber += 1;
+    return title;
+  }
+
+  private beginTitleEdit(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry || !entry.titleInput.hidden) {
+      return;
+    }
+
+    this.activateWindow(windowId);
+    entry.titleInput.value = this.windowTitles.get(windowId) || entry.titleDisplay.textContent || '';
+    entry.titleDisplay.hidden = true;
+    entry.titleInput.hidden = false;
+    entry.titleInput.focus();
+    entry.titleInput.select();
+  }
+
+  private cancelTitleEdit(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+
+    entry.titleInput.value = this.windowTitles.get(windowId) || entry.titleDisplay.textContent || '';
+    entry.titleInput.hidden = true;
+    entry.titleDisplay.hidden = false;
+  }
+
+  private commitWindowTitle(windowId: string, nextTitle: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+
+    const currentTitle = this.windowTitles.get(windowId) || entry.titleDisplay.textContent || '';
+    const title = nextTitle.trim() || currentTitle;
+    this.windowTitles.set(windowId, title);
+    entry.titleDisplay.textContent = title;
+    entry.titleInput.value = title;
+    entry.titleInput.hidden = true;
+    entry.titleDisplay.hidden = false;
+    this.broadcastWindowTitle(windowId);
+    void chrome.runtime.sendMessage({
+      type: 'RENAME_CHAT',
+      chatId: entry.chatId,
+      title
+    });
+  }
+
+  private broadcastWindowTitle(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+
+    const title = this.windowTitles.get(windowId) || entry.titleDisplay.textContent || '';
+    entry.iframe.contentWindow?.postMessage(
+      {
+        type: 'WINDOW_TITLE_CHANGED',
+        title
+      },
+      chrome.runtime.getURL('')
+    );
+  }
+
+  private bindTitleEditor(windowId: string) {
+    const entry = this.windows.get(windowId);
+    if (!entry) {
+      return;
+    }
+
+    entry.titleDisplay.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.beginTitleEdit(windowId);
+    });
+    entry.titleInput.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+    entry.titleInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.commitWindowTitle(windowId, entry.titleInput.value);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.cancelTitleEdit(windowId);
+      }
+    });
+    entry.titleInput.addEventListener('blur', () => {
+      this.commitWindowTitle(windowId, entry.titleInput.value);
+    });
   }
 
   createChatWindow(initialMessage = '', chat?: ChatSession) {
     this.counter += 1;
     const windowIndex = this.windows.size;
     const windowId = `ai-window-${Date.now()}-${this.counter}`;
+    const chatId = chat?.chatId || uid('chat');
+    const title = chat?.title || this.createDefaultWindowTitle();
     const wrapper = document.createElement('div');
     wrapper.className = 'ai-multi-window';
     wrapper.id = windowId;
+    wrapper.style.width = `${AIMultiWindow.DEFAULT_WINDOW_WIDTH}px`;
+    wrapper.style.height = `${AIMultiWindow.DEFAULT_WINDOW_HEIGHT}px`;
+    wrapper.style.minWidth = `${AIMultiWindow.MIN_WINDOW_WIDTH}px`;
+    wrapper.style.minHeight = `${AIMultiWindow.MIN_WINDOW_HEIGHT}px`;
     wrapper.innerHTML = `
       <div class="ai-window-header">
-        <div class="ai-window-title"><span class="ai-window-number">${chat?.title || t('content__aiChatTitle', { number: String(this.counter) })}</span></div>
+        <div class="ai-window-title">
+          <span class="ai-window-number">${escapeHtml(title)}</span>
+          <input class="ai-title-input" type="text" value="${escapeHtmlAttr(title)}" hidden>
+        </div>
         <div class="ai-window-controls">
           <button class="ai-window-btn ai-settings-btn" type="button" title="${escapeHtmlAttr(t('content__btnSettings'))}" aria-label="${escapeHtmlAttr(t('content__btnSettings'))}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -183,24 +331,46 @@ class AIMultiWindow {
     const cleanupDrag = this.makeDraggable(wrapper);
     const cleanupResize = this.makeResizable(wrapper);
     const cleanupViewport = this.bindViewportClamp(wrapper);
+    const iframe = wrapper.querySelector('iframe') as HTMLIFrameElement;
+    const titleDisplay = wrapper.querySelector('.ai-window-number') as HTMLElement;
+    const titleInput = wrapper.querySelector('.ai-title-input') as HTMLInputElement;
     const cleanup = () => {
       cleanupDrag();
       cleanupResize();
       cleanupViewport();
     };
 
+    this.windowTitles.set(windowId, title);
+    this.windows.set(windowId, {
+      chatId,
+      element: wrapper,
+      iframe,
+      titleDisplay,
+      titleInput,
+      cleanup
+    });
+    this.bindTitleEditor(windowId);
     this.bindControls(wrapper, windowId, cleanup);
-    this.windows.set(windowId, { element: wrapper, cleanup });
+    wrapper.addEventListener('pointerdown', () => {
+      this.activateWindow(windowId);
+    });
+    this.activateWindow(windowId);
     this.clampWindowToViewport(wrapper);
 
-    const iframe = wrapper.querySelector('iframe') as HTMLIFrameElement;
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = '0';
+    iframe.style.display = 'block';
     iframe.addEventListener('load', () => {
       iframe.contentWindow?.postMessage(
         {
           type: 'INIT_CHAT',
-          chatId: chat?.chatId,
+          chatId,
+          windowTitle: this.windowTitles.get(windowId),
           profileId: chat?.providerId ?? null,
           promptId: chat?.promptId ?? null,
+          streamingOverride: chat?.streamingOverride ?? null,
+          maxContextMessagesOverride: chat?.maxContextMessagesOverride ?? null,
           historyMessages: chat?.messages ?? null,
           initialMessage
         },
@@ -211,6 +381,7 @@ class AIMultiWindow {
 
   private bindControls(wrapper: HTMLElement, windowId: string, cleanup: () => void) {
     wrapper.querySelector('.ai-settings-btn')?.addEventListener('click', () => {
+      this.ensureSettingsPanelSpace(wrapper);
       const iframe = wrapper.querySelector('iframe') as HTMLIFrameElement | null;
       iframe?.contentWindow?.postMessage(
         { type: 'TOGGLE_SETTINGS_PANEL' },
@@ -218,14 +389,28 @@ class AIMultiWindow {
       );
     });
     wrapper.querySelector('.ai-close-btn')?.addEventListener('click', () => {
-      this.windows.delete(windowId);
-      cleanup();
-      wrapper.remove();
+      this.closeWindow(windowId);
     });
     wrapper.querySelector('.ai-minimize-btn')?.addEventListener('click', () => {
       wrapper.classList.toggle('minimized');
       this.clampWindowToViewport(wrapper);
     });
+  }
+
+  private ensureSettingsPanelSpace(wrapper: HTMLElement) {
+    if (wrapper.classList.contains('minimized')) {
+      wrapper.classList.remove('minimized');
+    }
+
+    const viewportWidth = Math.max(0, window.innerWidth - 20);
+    const targetWidth = Math.min(AIMultiWindow.SETTINGS_PANEL_WINDOW_WIDTH, viewportWidth || AIMultiWindow.SETTINGS_PANEL_WINDOW_WIDTH);
+    const currentWidth = wrapper.offsetWidth || parseFloat(wrapper.style.width) || AIMultiWindow.DEFAULT_WINDOW_WIDTH;
+
+    if (currentWidth < targetWidth) {
+      wrapper.style.width = `${targetWidth}px`;
+    }
+
+    this.clampWindowToViewport(wrapper);
   }
 
   private clamp(value: number, min: number, max: number): number {

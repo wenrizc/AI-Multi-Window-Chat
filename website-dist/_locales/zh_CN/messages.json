@@ -131,13 +131,13 @@
     "message": "选择导出格式",
     "description": "导出模态框标题"
   },
+  "history__exportFormatJson": {
+    "message": "JSON (.json)",
+    "description": "JSON 导出选项"
+  },
   "history__exportFormatMarkdown": {
     "message": "Markdown (.md)",
     "description": "Markdown 导出选项"
-  },
-  "history__exportFormatText": {
-    "message": "文本 (.txt)",
-    "description": "纯文本导出选项"
   },
   "history__btnExport": {
     "message": "导出",
@@ -206,6 +206,10 @@
   "chat__thinking": {
     "message": "AI 正在思考...",
     "description": "思考指示器"
+  },
+  "chat__inputPlaceholder": {
+    "message": "输入你的问题",
+    "description": "聊天输入框占位文案"
   },
   "chat__roleUser": {
     "message": "用户",
@@ -325,6 +329,14 @@
     "message": "停止",
     "description": "停止生成按钮"
   },
+  "chat__btnCopyMessage": {
+    "message": "复制",
+    "description": "复制助手消息按钮"
+  },
+  "chat__btnCopiedMessage": {
+    "message": "已复制",
+    "description": "助手消息复制完成按钮状态"
+  },
   "chat__statusIdle": {
     "message": "空闲",
     "description": "空闲状态"
@@ -357,6 +369,22 @@
     "message": "正在搜索：$1",
     "description": "搜索中状态"
   },
+  "chat__statusStopping": {
+    "message": "正在停止...",
+    "description": "停止请求中状态"
+  },
+  "chat__statusStopped": {
+    "message": "已停止",
+    "description": "已停止状态"
+  },
+  "chat__statusModelNoStreaming": {
+    "message": "当前模型不支持流式响应。",
+    "description": "当前模型不支持流式响应的提示"
+  },
+  "chat__statusPromptUnavailable": {
+    "message": "当前提示词不可用。",
+    "description": "当前提示词不存在时的提示"
+  },
   "chat__statusConfigureTavilyFirst": {
     "message": "请先配置 Tavily API Key。",
     "description": "缺少 Tavily key 状态"
@@ -364,6 +392,34 @@
   "chat__statusTavilyReturned": {
     "message": "Tavily 返回状态码 $1",
     "description": "Tavily 错误状态"
+  },
+  "chat__errorRequestFailed": {
+    "message": "请求失败，请稍后重试。",
+    "description": "通用请求失败提示"
+  },
+  "chat__errorAuthFailed": {
+    "message": "API Key 无效或鉴权失败。",
+    "description": "鉴权失败提示"
+  },
+  "chat__errorModelUnavailable": {
+    "message": "模型不存在或不可用。",
+    "description": "模型不可用提示"
+  },
+  "chat__errorTimeout": {
+    "message": "请求超时。",
+    "description": "请求超时提示"
+  },
+  "chat__errorNetwork": {
+    "message": "网络连接失败。",
+    "description": "网络失败提示"
+  },
+  "chat__errorServiceStatus": {
+    "message": "服务返回错误：状态码 $1",
+    "description": "服务状态码错误提示"
+  },
+  "chat__errorParseFailed": {
+    "message": "响应解析失败。",
+    "description": "响应解析失败提示"
   },
   "chat__reasoningSummary": {
     "message": "推理摘要",
@@ -401,9 +457,21 @@
     "message": "reasoning_content",
     "description": "reasoning_content 格式"
   },
+  "popup__reasoningFormatHelp": {
+    "message": "<p><strong>无</strong>：不读取单独的推理字段，普通 Chat Completions 服务大多选择这个。</p><p><strong>OpenAI 摘要</strong>：读取 OpenAI Responses API 的 reasoning summary，通常用于 OpenAI 推理模型。</p><p><strong>reasoning_content</strong>：读取额外的 reasoning_content 字段，DeepSeek、Qwen 以及部分 OpenAI 兼容服务通常选择这个。</p>",
+    "description": "推理字段格式悬浮说明"
+  },
   "popup__supportsStreaming": {
-    "message": "支持流式输出",
-    "description": "支持流式输出复选框"
+    "message": "开启流式响应",
+    "description": "模型级流式响应开关"
+  },
+  "popup__labelMaxContextMessages": {
+    "message": "最长会话长度",
+    "description": "模型级上下文窗口长度标签"
+  },
+  "popup__maxContextMessagesPlaceholder": {
+    "message": "留空表示完整历史",
+    "description": "模型级上下文窗口占位文案"
   },
   "popup__labelDefaultTemperature": {
     "message": "默认温度",
@@ -461,6 +529,10 @@
     "message": "默认开启搜索",
     "description": "默认开启搜索复选框"
   },
+  "popup__defaultStreamingEnabled": {
+    "message": "默认开启流式响应",
+    "description": "默认开启流式响应复选框"
+  },
   "popup__emptyProviders": {
     "message": "还没有模型配置。",
     "description": "空 provider 列表消息"
@@ -497,12 +569,76 @@
     "message": "AI 对话",
     "description": "AI 对话工具栏按钮标签"
   },
+  "content__btnSettings": {
+    "message": "设置",
+    "description": "聊天窗口标题栏设置按钮"
+  },
+  "content__btnMinimize": {
+    "message": "收起",
+    "description": "聊天窗口标题栏收起按钮"
+  },
+  "content__btnClose": {
+    "message": "关闭",
+    "description": "聊天窗口标题栏关闭按钮"
+  },
   "content__aiChatTitle": {
     "message": "AI 对话 $number$",
     "description": "内容脚本对话窗口的默认标题",
     "placeholders": {
       "number": { "content": "$1" }
     }
+  },
+  "chat__settingsModel": {
+    "message": "模型",
+    "description": "聊天设置面板中的模型选择标签"
+  },
+  "chat__settingsPrompt": {
+    "message": "提示词",
+    "description": "聊天设置面板中的提示词选择标签"
+  },
+  "chat__settingsSearch": {
+    "message": "搜索",
+    "description": "聊天设置面板中的搜索开关标签"
+  },
+  "chat__settingsStreaming": {
+    "message": "响应",
+    "description": "聊天设置面板中的流式响应标签"
+  },
+  "chat__settingsContextWindow": {
+    "message": "会话窗口",
+    "description": "聊天设置面板中的会话上下文窗口标签"
+  },
+  "chat__streamingToggle": {
+    "message": "流式响应",
+    "description": "聊天设置面板中的流式响应开关文案"
+  },
+  "chat__maxContextMessagesPlaceholder": {
+    "message": "留空表示完整历史",
+    "description": "聊天设置面板中的会话上下文窗口占位文案"
+  },
+  "chat__toolCalls": {
+    "message": "工具调用",
+    "description": "工具调用面板标题"
+  },
+  "chat__toolStatusPending": {
+    "message": "等待中",
+    "description": "等待中的工具调用状态"
+  },
+  "chat__toolStatusDone": {
+    "message": "已完成",
+    "description": "工具调用面板完成状态"
+  },
+  "chat__toolStatusCompleted": {
+    "message": "完成",
+    "description": "单个工具调用完成状态"
+  },
+  "chat__toolStatusFailed": {
+    "message": "失败",
+    "description": "单个工具调用失败状态"
+  },
+  "chat__toolWaiting": {
+    "message": "等待工具返回结果...",
+    "description": "工具调用等待中的输出提示"
   },
   "usage__unavailable": {
     "message": "暂无用量信息",
@@ -525,11 +661,11 @@
     "description": "网站首页文档标题"
   },
   "website__homeSubtitle": {
-    "message": "浏览器 AI 对话扩展",
+    "message": "多窗口 AI 对话浏览器扩展",
     "description": "网站首页副标题"
   },
   "website__homeIntro": {
-    "message": "AI 多窗口聊天是一款浏览器扩展，让您可以在任何网页上与 AI 进行对话。",
+    "message": "AI 多窗口聊天将多窗口 AI 对话、提示词、历史记录和服务配置集中带到任意网页中。",
     "description": "网站首页介绍"
   },
   "website__featuresTitle": {
@@ -541,15 +677,15 @@
     "description": "网站本地存储特点"
   },
   "website__featureMultiWindow": {
-    "message": "支持多窗口对话",
+    "message": "在任意网页开启多窗口聊天",
     "description": "网站多窗口特点"
   },
   "website__featureOpenAICompatible": {
-    "message": "兼容 OpenAI API",
+    "message": "兼容 OpenAI 风格接口，并支持流式与推理格式控制",
     "description": "网站 OpenAI 兼容特点"
   },
   "website__featureLightweight": {
-    "message": "轻量简洁",
+    "message": "支持历史、提示词与配置的导入导出",
     "description": "网站轻量特点"
   },
   "website__getStartedTitle": {

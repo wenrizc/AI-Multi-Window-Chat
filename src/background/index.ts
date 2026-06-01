@@ -1,7 +1,7 @@
 import { streamProviderResponse, testProviderConnection } from '../providers/openai-compatible';
 import { runSearchToolSession } from '../search/tool-session';
 import { PORT_NAME } from '../shared/constants';
-import { getStore, upsertChatSession } from '../shared/storage';
+import { getStore, updateStore, upsertChatSession } from '../shared/storage';
 import type {
   ChatRequest,
   ChatRequestMessage,
@@ -118,9 +118,11 @@ async function persistConversation(input: {
 
   const session = {
     chatId: input.request.chatId,
-    title: existing?.title || compactText(input.request.userMessage)?.slice(0, 60) || i18nMessage('common__newChat'),
+    title: existing?.title || input.request.windowTitle || compactText(input.request.userMessage)?.slice(0, 60) || i18nMessage('common__newChat'),
     providerId: input.request.providerId,
     promptId: input.request.promptId,
+    streamingOverride: input.request.streamingOverride,
+    maxContextMessagesOverride: input.request.maxContextMessagesOverride,
     mode: input.request.mode,
     messages,
     totalUsage,
@@ -129,6 +131,23 @@ async function persistConversation(input: {
   };
 
   await upsertChatSession(session);
+}
+
+async function renameConversation(chatId: string, title: string) {
+  const nextTitle = compactText(title);
+  if (!nextTitle) {
+    return;
+  }
+
+  await updateStore((store) => {
+    const session = store.chatHistory.find((item) => item.chatId === chatId);
+    if (!session) {
+      return store;
+    }
+    session.title = nextTitle;
+    session.updatedAt = nowIso();
+    return store;
+  });
 }
 
 async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest) {
@@ -330,6 +349,12 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'TEST_PROVIDER') {
     testProviderConnection(message.provider as ProviderConfig)
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+  if (message?.type === 'RENAME_CHAT' && typeof message.chatId === 'string' && typeof message.title === 'string') {
+    renameConversation(message.chatId, message.title)
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) }));
     return true;

@@ -12,12 +12,19 @@
     }
 
     :root {
-      --accent: #667eea;
-      --border: #e5e5e5;
-      --text: #1a1a1a;
-      --muted: #737373;
-      --bg: #ffffff;
-      --panel-list-height: 400px;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --surface-page: #f3f6fb;
+      --surface-panel: rgba(255, 255, 255, 0.88);
+      --surface-card: #ffffff;
+      --surface-muted: #f8fafc;
+      --border: #dbe3ef;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --muted: #64748b;
+      --shadow-panel: 0 24px 56px rgba(15, 23, 42, 0.14);
+      --shadow-card: 0 10px 24px rgba(15, 23, 42, 0.08);
+      --panel-list-height: 360px;
     }
 
     html,
@@ -26,76 +33,97 @@
     }
 
     body {
-      width: 540px;
+      width: 568px;
+      min-width: 568px;
       min-height: 0;
-      height: auto;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       font-size: 14px;
       line-height: 1.6;
       color: var(--text);
-      background: var(--bg);
+      background:
+        radial-gradient(circle at top left, rgba(219, 234, 254, 0.85), transparent 34%),
+        linear-gradient(180deg, #f8fbff 0%, var(--surface-page) 100%);
       display: flex;
       flex-direction: column;
+      padding: 10px;
+      gap: 10px;
     }
 
     .header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: #ffffff;
+      display: flex;
+      align-items: center;
+      min-height: 58px;
+      padding: 0 18px;
+      border: 1px solid rgba(219, 227, 239, 0.92);
+      border-radius: 16px;
+      background: var(--surface-panel);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-card);
     }
 
     .header h1 {
       font-size: 18px;
-      font-weight: 600;
+      font-weight: 700;
+      letter-spacing: 0;
     }
 
     .tabs {
       display: flex;
-      border-bottom: 1px solid var(--border);
-      background: #ffffff;
+      gap: 8px;
+      padding: 6px;
+      border: 1px solid rgba(219, 227, 239, 0.92);
+      border-radius: 16px;
+      background: var(--surface-panel);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-card);
     }
 
     .tab {
       flex: 1;
-      padding: 12px 16px;
+      min-height: 38px;
+      padding: 0 12px;
       text-align: center;
       background: transparent;
       border: none;
-      border-bottom: 2px solid transparent;
+      border-radius: 10px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--muted);
-      transition: color 0.2s, border-color 0.2s;
+      transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
     }
 
     .tab:hover {
       color: var(--accent);
+      background: rgba(239, 246, 255, 0.7);
     }
 
     .tab.active {
       color: var(--accent);
-      border-bottom-color: var(--accent);
+      background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.95);
     }
 
     .tab-content {
       display: none;
-      padding: 16px;
-      flex: 1 1 auto;
-      min-height: 0;
+      padding: 14px;
+      border: 1px solid rgba(219, 227, 239, 0.92);
+      border-radius: 18px;
+      background: var(--surface-panel);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-panel);
     }
 
     .tab-content.active {
-      display: flex;
-      flex-direction: column;
+      display: block;
     }
 
     .config-toolbar {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       margin-bottom: 12px;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
     }
 
     .config-toolbar-right {
@@ -106,36 +134,39 @@
       font-size: 12px;
       color: var(--muted);
       flex-wrap: nowrap;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.9);
     }
 
     .config-toolbar-right label {
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
       line-height: 1.2;
-      padding: 6px 0;
+      padding: 0 4px 0 8px;
     }
 
     .config-toolbar-right select {
-      padding: 6px 10px;
+      min-width: 116px;
+      padding: 7px 10px;
       font-size: 12px;
       line-height: 1.2;
     }
 
     .config-grid {
       display: grid;
-      grid-template-columns: 160px 1fr;
-      gap: 16px;
+      grid-template-columns: 170px minmax(0, 1fr);
+      gap: 14px;
       align-items: start;
-      flex: 1 1 auto;
-      min-height: 0;
     }
 
     .profile-list {
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 14px;
       padding: 8px;
-      background: #fafafa;
+      background: rgba(248, 250, 252, 0.95);
       height: var(--panel-list-height);
       overflow-y: auto;
       display: flex;
@@ -168,31 +199,34 @@
       align-items: center;
       gap: 8px;
       width: 100%;
-      padding: 8px 10px;
+      min-height: 38px;
+      padding: 0 10px;
       border: 1px solid transparent;
-      border-radius: 8px;
+      border-radius: 10px;
       background: transparent;
       text-align: left;
       cursor: pointer;
       color: var(--text);
       font-size: 13px;
+      font-weight: 600;
+      transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     }
 
     .profile-item:hover {
-      background: #f3f4f6;
+      background: rgba(255, 255, 255, 0.72);
     }
 
     .profile-item.active {
       background: #ffffff;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.12);
+      border-color: rgba(191, 219, 254, 0.98);
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
     }
 
     .profile-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      border: 1px solid #cbd5f5;
+      border: 1px solid #bfdbfe;
       background: transparent;
       flex-shrink: 0;
     }
@@ -211,10 +245,26 @@
 
     .profile-details {
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      background: #ffffff;
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.95);
       min-height: var(--panel-list-height);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .field-span-2 {
+      grid-column: auto;
+    }
+
+    .field-grid .input-group {
+      margin-bottom: 0;
     }
 
     .input-group {
@@ -223,25 +273,91 @@
 
     .input-group label {
       display: block;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
       font-size: 12px;
-      font-weight: 600;
-      color: #4a4a4a;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .label-with-help {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+
+    .label-with-help label {
+      margin-bottom: 0;
+    }
+
+    .reasoning-help {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: rgba(248, 250, 252, 0.95);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: help;
+      user-select: none;
+    }
+
+    .reasoning-tooltip {
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 10px);
+      z-index: 10;
+      width: 300px;
+      max-width: calc(100vw - 40px);
+      padding: 12px;
+      border: 1px solid rgba(191, 219, 254, 0.95);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.98);
+      color: var(--text);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 6px);
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+
+    .reasoning-help:hover .reasoning-tooltip,
+    .reasoning-help:focus-within .reasoning-tooltip {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .reasoning-tooltip p {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .reasoning-tooltip p:last-child {
+      margin-bottom: 0;
     }
 
     input[type="password"],
+    input[type="number"],
     input[type="text"],
     input[type="url"],
     textarea,
     select {
       width: 100%;
-      padding: 9px 12px;
+      padding: 8px 10px;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 13px;
       font-family: inherit;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      background: #ffffff;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      background: rgba(255, 255, 255, 0.98);
+      color: var(--text);
     }
 
     textarea {
@@ -251,13 +367,15 @@
     }
 
     input[type="password"]:focus,
+    input[type="number"]:focus,
     input[type="text"]:focus,
     input[type="url"]:focus,
     textarea:focus,
     select:focus {
       outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      border-color: rgba(37, 99, 235, 0.55);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+      background: #ffffff;
     }
 
     .inline-actions {
@@ -271,51 +389,54 @@
     }
 
     .btn {
-      padding: 8px 12px;
-      border: none;
-      border-radius: 8px;
+      min-height: 34px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      border-radius: 10px;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       font-family: inherit;
       cursor: pointer;
-      transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+      transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
     }
 
     .btn-primary {
       background: var(--accent);
       color: #ffffff;
+      box-shadow: 0 10px 18px rgba(37, 99, 235, 0.16);
     }
 
     .btn-primary:hover {
-      background: #5a6fe0;
+      filter: brightness(1.02);
     }
 
     .btn-secondary {
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.92);
       color: var(--text);
       border: 1px solid var(--border);
     }
 
     .btn-secondary:hover {
-      border-color: var(--accent);
+      background: #ffffff;
+      border-color: rgba(191, 219, 254, 0.95);
       color: var(--accent);
     }
 
     .btn-danger {
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.92);
       color: #dc2626;
       border: 1px solid #fecaca;
     }
 
     .btn-danger:hover {
       background: #fef2f2;
-      border-color: #dc2626;
+      border-color: #fca5a5;
     }
 
     .btn:disabled {
-      background: #e5e7eb;
-      color: #9ca3af;
-      border-color: #e5e7eb;
+      background: #e2e8f0;
+      color: #94a3b8;
+      border-color: #e2e8f0;
       cursor: not-allowed;
       box-shadow: none;
     }
@@ -328,21 +449,20 @@
     }
 
     .btn-small {
-      padding: 6px 10px;
       font-size: 12px;
     }
 
     .btn-inline {
-      padding: 8px 10px;
       font-size: 12px;
     }
 
     .status {
       padding: 10px 12px;
-      border-radius: 8px;
+      border-radius: 12px;
       font-size: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       display: none;
+      border: 1px solid transparent;
     }
 
     .status.show {
@@ -369,33 +489,40 @@
     }
 
     .preset-btn {
-      padding: 4px 8px;
+      min-height: 28px;
+      padding: 0 9px;
       font-size: 11px;
-      background: #f3f4f6;
+      background: rgba(248, 250, 252, 0.95);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 999px;
       cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
+      transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
     }
 
     .preset-btn:hover {
-      background: #e5e7eb;
-      border-color: #d1d5db;
+      background: #ffffff;
+      border-color: rgba(191, 219, 254, 0.95);
+      color: var(--accent);
     }
 
     .footer {
-      padding: 12px 20px;
-      border-top: 1px solid var(--border);
+      padding: 2px 4px 4px;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      backdrop-filter: none;
       text-align: center;
       font-size: 12px;
-      color: #9ca3af;
+      font-weight: 700;
+      color: #6b7b95;
+      box-shadow: none;
     }
 
     .history-list {
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 14px;
       padding: 8px;
-      background: #fafafa;
+      background: rgba(248, 250, 252, 0.95);
       height: var(--panel-list-height);
       overflow-y: auto;
       margin-bottom: 16px;
@@ -416,17 +543,17 @@
 
     .history-item {
       padding: 12px;
-      border: none;
-      border-radius: 8px;
+      border: 1px solid rgba(219, 227, 239, 0.92);
+      border-radius: 12px;
       margin-bottom: 12px;
-      background: #ffffff;
-      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
-      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
     }
 
     .history-item:hover {
-      border-color: var(--accent);
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
+      border-color: rgba(191, 219, 254, 0.95);
+      box-shadow: 0 14px 26px rgba(37, 99, 235, 0.08);
     }
 
     .history-item-header {
@@ -454,6 +581,17 @@
       margin-bottom: 8px;
     }
 
+    .history-item-summary {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
     .history-item-actions {
       display: flex;
       gap: 6px;
@@ -477,6 +615,7 @@
       gap: 8px;
       padding-top: 10px;
       justify-content: flex-end;
+      flex-wrap: wrap;
     }
 
     .bottom-actions .btn {
@@ -490,10 +629,11 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(15, 23, 42, 0.28);
       z-index: 1000;
       align-items: center;
       justify-content: center;
+      padding: 20px;
     }
 
     .modal.show {
@@ -501,14 +641,16 @@
     }
 
     .modal-content {
-      background: #ffffff;
-      border-radius: 12px;
-      width: 90%;
+      width: min(100%, 620px);
       max-width: 600px;
       max-height: 80vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(219, 227, 239, 0.92);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 30px 70px rgba(15, 23, 42, 0.2);
     }
 
     .modal-header {
@@ -521,29 +663,30 @@
 
     .modal-title {
       font-size: 16px;
-      font-weight: 600;
-      color: #262626;
+      font-weight: 700;
+      color: var(--text);
     }
 
     .modal-close {
       background: none;
-      border: none;
-      font-size: 24px;
-      color: #737373;
+      border: 1px solid transparent;
+      font-size: 22px;
+      color: var(--muted);
       cursor: pointer;
       padding: 0;
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 6px;
-      transition: all 0.2s;
+      border-radius: 10px;
+      transition: all 0.18s ease;
     }
 
     .modal-close:hover {
-      background: #f3f4f6;
-      color: #262626;
+      background: #f8fafc;
+      border-color: var(--border);
+      color: var(--text);
     }
 
     .modal-body {
@@ -561,36 +704,44 @@
     }
 
     .export-options {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
 
     .export-option {
-      padding: 12px;
-      border: 2px solid var(--border);
-      border-radius: 8px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
       text-align: center;
+      background: rgba(248, 250, 252, 0.9);
     }
 
     .export-option:hover {
-      border-color: var(--accent);
-      background: rgba(102, 126, 234, 0.05);
+      border-color: rgba(191, 219, 254, 0.95);
+      background: #ffffff;
+      box-shadow: var(--shadow-card);
     }
 
     .action-row {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-top: 12px;
+      margin-top: 10px;
       justify-content: flex-end;
     }
 
+    .profile-details .action-row {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
     .export-option-title {
-      font-weight: 600;
-      color: #262626;
+      font-weight: 700;
+      color: var(--text);
     }
 
     .confirm-dialog {
@@ -605,7 +756,7 @@
 
     .confirm-dialog-text {
       font-size: 14px;
-      color: #262626;
+      color: var(--text);
       margin-bottom: 16px;
     }
 
@@ -613,6 +764,88 @@
       display: flex;
       gap: 8px;
       justify-content: center;
+    }
+
+    .checkbox-group {
+      margin-bottom: 0;
+    }
+
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 20px;
+      margin-bottom: 0;
+      padding: 0;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .checkbox-group input {
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .toggle-card {
+      display: flex;
+      align-items: stretch;
+    }
+
+    .toggle-card label {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.95);
+      justify-content: flex-start;
+    }
+
+    .search-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .search-grid .input-group {
+      margin-bottom: 0;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: var(--shadow-card);
+    }
+
+    .search-span-2 {
+      grid-column: auto;
+    }
+
+    .search-grid .input-group.checkbox-group {
+      display: flex;
+      align-items: center;
+    }
+
+    @media (max-width: 560px) {
+      .config-grid,
+      .field-grid,
+      .search-grid,
+      .export-options {
+        grid-template-columns: 1fr;
+      }
+
+      .field-span-2,
+      .search-span-2 {
+        grid-column: auto;
+      }
+
+      .config-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .config-toolbar-right {
+        margin-left: 0;
+      }
     }
   </style>
 </head>
@@ -644,62 +877,79 @@
     <div class="config-grid">
       <div class="profile-list" id="profileList"></div>
       <div class="profile-details">
-        <div class="input-group">
-          <label for="profileName" data-i18n="popup__labelProfileName">Name</label>
-          <input type="text" id="profileName" />
-        </div>
-
-        <div class="input-group">
-          <label for="apiUrl" data-i18n="popup__labelApiUrl">API URL</label>
-          <input type="url" id="apiUrl" />
-          <div class="preset-buttons">
-            <button class="preset-btn" data-url="https://api.openai.com/v1" data-i18n="popup__presetOpenAI">OpenAI</button>
-            <button class="preset-btn" data-url="https://api.deepseek.com" data-i18n="popup__presetDeepSeek">DeepSeek</button>
-            <button class="preset-btn" data-url="https://dashscope.aliyuncs.com/compatible-mode/v1" data-i18n="popup__presetQwen">Qwen</button>
+        <div class="field-grid">
+          <div class="input-group">
+            <label for="profileName" data-i18n="popup__labelProfileName">Name</label>
+            <input type="text" id="profileName" />
           </div>
-        </div>
 
-        <div class="input-group">
-          <label for="apiKey" data-i18n="popup__labelApiKey">API Key</label>
-          <div class="inline-actions">
-            <input type="password" id="apiKey" />
-            <button id="toggleApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnShowKey">Show</button>
-            <button id="copyApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnCopyKey">Copy</button>
+          <div class="input-group">
+            <label for="modelName" data-i18n="popup__labelModelName">Model Name</label>
+            <input type="text" id="modelName" />
           </div>
-        </div>
 
-        <div class="input-group">
-          <label for="modelName" data-i18n="popup__labelModelName">Model Name</label>
-          <input type="text" id="modelName" />
-        </div>
+          <div class="input-group field-span-2">
+            <label for="apiUrl" data-i18n="popup__labelApiUrl">API URL</label>
+            <input type="url" id="apiUrl" />
+            <div class="preset-buttons">
+              <button class="preset-btn" data-url="https://api.openai.com/v1" data-i18n="popup__presetOpenAI">OpenAI</button>
+              <button class="preset-btn" data-url="https://api.deepseek.com" data-i18n="popup__presetDeepSeek">DeepSeek</button>
+              <button class="preset-btn" data-url="https://dashscope.aliyuncs.com/compatible-mode/v1" data-i18n="popup__presetQwen">Qwen</button>
+            </div>
+          </div>
 
-        <div class="input-group">
-          <label for="transportSelect" data-i18n="popup__labelTransport">Transport</label>
-          <select id="transportSelect">
-            <option value="chat_completions" data-i18n="popup__transportChatCompletions">Chat Completions</option>
-            <option value="responses" data-i18n="popup__transportResponses">Responses</option>
-          </select>
-        </div>
+          <div class="input-group field-span-2">
+            <label for="apiKey" data-i18n="popup__labelApiKey">API Key</label>
+            <div class="inline-actions">
+              <input type="password" id="apiKey" />
+              <button id="toggleApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnShowKey">Show</button>
+              <button id="copyApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnCopyKey">Copy</button>
+            </div>
+          </div>
 
-        <div class="input-group">
-          <label for="reasoningFormatSelect" data-i18n="popup__labelReasoningFormat">Reasoning Format</label>
-          <select id="reasoningFormatSelect">
-            <option value="none" data-i18n="popup__reasoningFormatNone">None</option>
-            <option value="openai_summary" data-i18n="popup__reasoningFormatOpenAISummary">OpenAI Summary</option>
-            <option value="reasoning_content" data-i18n="popup__reasoningFormatReasoningContent">reasoning_content</option>
-          </select>
-        </div>
+          <div class="input-group">
+            <label for="transportSelect" data-i18n="popup__labelTransport">Transport</label>
+            <select id="transportSelect">
+              <option value="chat_completions" data-i18n="popup__transportChatCompletions">Chat Completions</option>
+              <option value="responses" data-i18n="popup__transportResponses">Responses</option>
+            </select>
+          </div>
 
-        <div class="input-group">
-          <label>
-            <input type="checkbox" id="supportsStreamingCheckbox" checked />
-            <span data-i18n="popup__supportsStreaming">Supports Streaming</span>
-          </label>
-        </div>
+          <div class="input-group">
+            <div class="label-with-help">
+              <label for="reasoningFormatSelect" data-i18n="popup__labelReasoningFormat">Reasoning Format</label>
+              <span class="reasoning-help" tabindex="0" aria-label="Reasoning format help">?
+                <span class="reasoning-tooltip" data-i18n-html="popup__reasoningFormatHelp">
+                  <p><strong>None</strong>: use normal response text only.</p>
+                  <p><strong>OpenAI Summary</strong>: use OpenAI Responses reasoning summaries, typically for OpenAI reasoning models.</p>
+                  <p><strong>reasoning_content</strong>: use the extra reasoning_content field, commonly used by DeepSeek/Qwen-compatible services.</p>
+                </span>
+              </span>
+            </div>
+            <select id="reasoningFormatSelect">
+              <option value="none" data-i18n="popup__reasoningFormatNone">None</option>
+              <option value="openai_summary" data-i18n="popup__reasoningFormatOpenAISummary">OpenAI Summary</option>
+              <option value="reasoning_content" data-i18n="popup__reasoningFormatReasoningContent">reasoning_content</option>
+            </select>
+          </div>
 
-        <div class="input-group">
-          <label for="temperatureInput" data-i18n="popup__labelDefaultTemperature">Default Temperature</label>
-          <input type="text" id="temperatureInput" />
+          <div class="input-group checkbox-group toggle-card">
+            <label for="supportsStreamingCheckbox">
+              <input type="checkbox" id="supportsStreamingCheckbox" />
+              <span data-i18n="popup__supportsStreaming">Enable Streaming</span>
+            </label>
+          </div>
+
+          <div class="input-group">
+            <label for="maxContextMessagesInput" data-i18n="popup__labelMaxContextMessages">Max Context Messages</label>
+            <input type="number" id="maxContextMessagesInput" min="0" step="1" data-i18n-placeholder="popup__maxContextMessagesPlaceholder" placeholder="Empty for full history" />
+          </div>
+
+          <div class="input-group">
+            <label for="temperatureInput" data-i18n="popup__labelDefaultTemperature">Default Temperature</label>
+            <input type="text" id="temperatureInput" />
+          </div>
+
         </div>
 
         <div class="action-row">
@@ -714,53 +964,41 @@
 
   <div class="tab-content" id="searchTab">
     <div id="searchStatus" class="status"></div>
+    <div class="search-grid">
+      <div class="input-group search-span-2">
+        <label for="tavilyApiKey" data-i18n="popup__labelTavilyApiKey">Tavily API Key</label>
+        <input type="password" id="tavilyApiKey" />
+      </div>
 
-    <div class="input-group">
-      <label for="tavilyApiKey" data-i18n="popup__labelTavilyApiKey">Tavily API Key</label>
-      <input type="password" id="tavilyApiKey" />
-    </div>
+      <div class="input-group">
+        <label for="searchDepthSelect" data-i18n="popup__labelSearchDepth">Search Depth</label>
+        <select id="searchDepthSelect">
+          <option value="basic" data-i18n="popup__searchDepthBasic">Basic</option>
+          <option value="advanced" data-i18n="popup__searchDepthAdvanced">Advanced</option>
+        </select>
+      </div>
 
-    <div class="input-group">
-      <label for="searchDepthSelect" data-i18n="popup__labelSearchDepth">Search Depth</label>
-      <select id="searchDepthSelect">
-        <option value="basic" data-i18n="popup__searchDepthBasic">Basic</option>
-        <option value="advanced" data-i18n="popup__searchDepthAdvanced">Advanced</option>
-      </select>
-    </div>
+      <div class="input-group">
+        <label for="timeRangeSelect" data-i18n="popup__labelTimeRange">Time Range</label>
+        <select id="timeRangeSelect">
+          <option value="" data-i18n="popup__timeRangeAll">All Time</option>
+          <option value="day" data-i18n="popup__timeRangeDay">Past Day</option>
+          <option value="week" data-i18n="popup__timeRangeWeek">Past Week</option>
+          <option value="month" data-i18n="popup__timeRangeMonth">Past Month</option>
+          <option value="year" data-i18n="popup__timeRangeYear">Past Year</option>
+        </select>
+      </div>
 
-    <div class="input-group">
-      <label for="timeRangeSelect" data-i18n="popup__labelTimeRange">Time Range</label>
-      <select id="timeRangeSelect">
-        <option value="" data-i18n="popup__timeRangeAll">All Time</option>
-        <option value="day" data-i18n="popup__timeRangeDay">Past Day</option>
-        <option value="week" data-i18n="popup__timeRangeWeek">Past Week</option>
-        <option value="month" data-i18n="popup__timeRangeMonth">Past Month</option>
-        <option value="year" data-i18n="popup__timeRangeYear">Past Year</option>
-      </select>
-    </div>
+      <div class="input-group">
+        <label for="maxResultsInput" data-i18n="popup__labelMaxSearchResults">Max Search Results</label>
+        <input type="text" id="maxResultsInput" value="5" />
+      </div>
 
-    <div class="input-group">
-      <label for="maxResultsInput" data-i18n="popup__labelMaxSearchResults">Max Search Results</label>
-      <input type="text" id="maxResultsInput" value="5" />
-    </div>
+      <div class="input-group">
+        <label for="maxRoundsInput" data-i18n="popup__labelMaxSearchRounds">Max Search Rounds</label>
+        <input type="text" id="maxRoundsInput" value="1" />
+      </div>
 
-    <div class="input-group">
-      <label for="maxRoundsInput" data-i18n="popup__labelMaxSearchRounds">Max Search Rounds</label>
-      <input type="text" id="maxRoundsInput" value="1" />
-    </div>
-
-    <div class="input-group">
-      <label>
-        <input type="checkbox" id="searchEnabledByDefaultCheckbox" />
-        <span data-i18n="popup__searchEnabledByDefault">Search Enabled By Default</span>
-      </label>
-    </div>
-
-    <div class="input-group">
-      <label>
-        <input type="checkbox" id="defaultStreamingCheckbox" checked />
-        <span data-i18n="popup__defaultStreamingEnabled">Streaming Enabled By Default</span>
-      </label>
     </div>
   </div>
 
@@ -817,12 +1055,12 @@
   </div>
 
   <div class="footer" id="footer">
-    AI Multi-Window Extension v1.0.0
+    AI Multi-Window Extension v2.0.0
   </div>
 
   <!-- Hidden file inputs for import -->
-  <input type="file" id="importProfilesInput" accept=".json" style="display: none;" />
-  <input type="file" id="importPromptsInput" accept=".json" style="display: none;" />
+  <input type="file" id="importProfilesInput" accept=".json, .md, .markdown" style="display: none;" />
+  <input type="file" id="importPromptsInput" accept=".json, .md, .markdown" style="display: none;" />
 
   <div class="modal" id="exportModal">
     <div class="modal-content">
@@ -832,11 +1070,11 @@
       </div>
       <div class="modal-body">
         <div class="export-options">
+          <div class="export-option" data-format="json">
+            <div class="export-option-title" data-i18n="history__exportFormatJson">JSON (.json)</div>
+          </div>
           <div class="export-option" data-format="markdown">
             <div class="export-option-title" data-i18n="history__exportFormatMarkdown">Markdown (.md)</div>
-          </div>
-          <div class="export-option" data-format="text">
-            <div class="export-option-title" data-i18n="history__exportFormatText">Text (.txt)</div>
           </div>
         </div>
       </div>

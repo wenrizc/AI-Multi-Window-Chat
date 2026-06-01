@@ -16,7 +16,7 @@ export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
 export const DEFAULT_FEATURE_SETTINGS: FeatureSettings = {
   defaultProviderId: null,
   defaultPromptId: null,
-  defaultStreaming: true,
+  defaultStreaming: false,
   search: DEFAULT_SEARCH_SETTINGS
 };
 

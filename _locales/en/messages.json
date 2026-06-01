@@ -131,13 +131,13 @@
     "message": "Select Export Format",
     "description": "Export modal title"
   },
+  "history__exportFormatJson": {
+    "message": "JSON (.json)",
+    "description": "JSON export option"
+  },
   "history__exportFormatMarkdown": {
     "message": "Markdown (.md)",
     "description": "Markdown export option"
-  },
-  "history__exportFormatText": {
-    "message": "Text (.txt)",
-    "description": "Text export option"
   },
   "history__btnExport": {
     "message": "Export",
@@ -206,6 +206,10 @@
   "chat__thinking": {
     "message": "AI is thinking...",
     "description": "Thinking indicator"
+  },
+  "chat__inputPlaceholder": {
+    "message": "Ask anything",
+    "description": "Chat input placeholder"
   },
   "chat__roleUser": {
     "message": "User",
@@ -325,6 +329,14 @@
     "message": "Stop",
     "description": "Stop generation button"
   },
+  "chat__btnCopyMessage": {
+    "message": "Copy",
+    "description": "Copy assistant message button"
+  },
+  "chat__btnCopiedMessage": {
+    "message": "Copied",
+    "description": "Copied assistant message button state"
+  },
   "chat__statusIdle": {
     "message": "Idle",
     "description": "Idle status"
@@ -357,6 +369,22 @@
     "message": "Searching for: $1",
     "description": "Searching status with query"
   },
+  "chat__statusStopping": {
+    "message": "Stopping...",
+    "description": "Stop request in progress status"
+  },
+  "chat__statusStopped": {
+    "message": "Stopped.",
+    "description": "Generation stopped status"
+  },
+  "chat__statusModelNoStreaming": {
+    "message": "Current model does not support streaming.",
+    "description": "Warning shown when streaming is unavailable for the selected model"
+  },
+  "chat__statusPromptUnavailable": {
+    "message": "Current prompt is unavailable.",
+    "description": "Warning shown when the selected prompt cannot be found"
+  },
   "chat__statusConfigureTavilyFirst": {
     "message": "Please configure Tavily API key first.",
     "description": "Missing Tavily key status"
@@ -364,6 +392,34 @@
   "chat__statusTavilyReturned": {
     "message": "Tavily returned $1",
     "description": "Tavily error status"
+  },
+  "chat__errorRequestFailed": {
+    "message": "Request failed. Please try again.",
+    "description": "Generic chat request failure"
+  },
+  "chat__errorAuthFailed": {
+    "message": "API key is invalid or authentication failed.",
+    "description": "Authentication failure message"
+  },
+  "chat__errorModelUnavailable": {
+    "message": "Model does not exist or is unavailable.",
+    "description": "Model unavailable failure message"
+  },
+  "chat__errorTimeout": {
+    "message": "Request timed out.",
+    "description": "Timeout failure message"
+  },
+  "chat__errorNetwork": {
+    "message": "Network connection failed.",
+    "description": "Network failure message"
+  },
+  "chat__errorServiceStatus": {
+    "message": "Service returned status $1.",
+    "description": "Service status-code failure message"
+  },
+  "chat__errorParseFailed": {
+    "message": "Failed to parse the response.",
+    "description": "Response parsing failure message"
   },
   "chat__reasoningSummary": {
     "message": "Reasoning Summary",
@@ -401,9 +457,21 @@
     "message": "reasoning_content",
     "description": "reasoning_content format"
   },
+  "popup__reasoningFormatHelp": {
+    "message": "<p><strong>None</strong>: no separate reasoning field; use this for most normal chat-completions services.</p><p><strong>OpenAI Summary</strong>: reads reasoning summaries from the OpenAI Responses API; commonly used with OpenAI reasoning models.</p><p><strong>reasoning_content</strong>: reads the extra reasoning_content field; commonly used by DeepSeek, Qwen, and OpenAI-compatible services that expose chain-of-thought-like reasoning separately.</p>",
+    "description": "Reasoning format hover help"
+  },
   "popup__supportsStreaming": {
-    "message": "Supports Streaming",
-    "description": "Supports streaming checkbox"
+    "message": "Enable Streaming",
+    "description": "Per-model streaming enabled checkbox"
+  },
+  "popup__labelMaxContextMessages": {
+    "message": "Max Context Messages",
+    "description": "Per-model context window size label"
+  },
+  "popup__maxContextMessagesPlaceholder": {
+    "message": "Empty for full history",
+    "description": "Per-model context window placeholder"
   },
   "popup__labelDefaultTemperature": {
     "message": "Default Temperature",
@@ -536,9 +604,17 @@
     "message": "Response",
     "description": "Label for streaming toggle in chat settings panel"
   },
+  "chat__settingsContextWindow": {
+    "message": "Context Window",
+    "description": "Label for session context window input in chat settings panel"
+  },
   "chat__streamingToggle": {
     "message": "Streaming",
     "description": "Streaming toggle text in chat settings panel"
+  },
+  "chat__maxContextMessagesPlaceholder": {
+    "message": "Empty for full history",
+    "description": "Session context window placeholder in chat settings panel"
   },
   "chat__toolCalls": {
     "message": "Tool Calls",
@@ -585,11 +661,11 @@
     "description": "Website home page document title"
   },
   "website__homeSubtitle": {
-    "message": "Browser extension for AI conversations",
+    "message": "Browser extension for multi-window AI conversations",
     "description": "Website home page subtitle"
   },
   "website__homeIntro": {
-    "message": "AI Multi-Window Chat is a browser extension that enables AI conversations on any webpage.",
+    "message": "AI Multi-Window Chat brings configurable multi-window AI chat, prompts, history, and provider profiles to any webpage.",
     "description": "Website home page introduction"
   },
   "website__featuresTitle": {
@@ -601,15 +677,15 @@
     "description": "Website feature for local storage"
   },
   "website__featureMultiWindow": {
-    "message": "Multi-window conversations",
+    "message": "Multi-window chat on any page",
     "description": "Website feature for multi-window chat"
   },
   "website__featureOpenAICompatible": {
-    "message": "OpenAI API compatible",
+    "message": "OpenAI-compatible providers with streaming and reasoning controls",
     "description": "Website feature for OpenAI compatibility"
   },
   "website__featureLightweight": {
-    "message": "Lightweight and simple",
+    "message": "History, prompts, and config import/export",
     "description": "Website feature for lightweight design"
   },
   "website__getStartedTitle": {

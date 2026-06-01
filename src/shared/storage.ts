@@ -17,11 +17,56 @@ async function readRawStore(): Promise<RootStore | null> {
 export async function ensureStore(): Promise<RootStore> {
   const existing = await readRawStore();
   if (existing) {
-    return existing;
+    const normalized = normalizeFixedDefaults(existing);
+    if (normalized.changed) {
+      await chrome.storage.local.set({ [STORAGE_KEY]: normalized.store });
+    }
+    return normalized.store;
   }
   const store = createEmptyStore();
   await chrome.storage.local.set({ [STORAGE_KEY]: store });
   return store;
+}
+
+function normalizeFixedDefaults(store: RootStore): { store: RootStore; changed: boolean } {
+  let changed = false;
+  const normalized = structuredClone(store);
+
+  if (normalized.featureSettings.defaultStreaming !== false) {
+    normalized.featureSettings.defaultStreaming = false;
+    changed = true;
+  }
+
+  if (normalized.featureSettings.search.enabledByDefault !== false) {
+    normalized.featureSettings.search.enabledByDefault = false;
+    changed = true;
+  }
+
+  for (const provider of normalized.providers) {
+    for (const model of provider.modelCatalog) {
+      if (typeof model.supportsStreaming !== 'boolean') {
+        model.supportsStreaming = true;
+        changed = true;
+      }
+      if (model.maxContextMessages === undefined) {
+        model.maxContextMessages = null;
+        changed = true;
+      }
+    }
+  }
+
+  for (const chat of normalized.chatHistory) {
+    if (chat.streamingOverride === undefined) {
+      chat.streamingOverride = null;
+      changed = true;
+    }
+    if (chat.maxContextMessagesOverride === undefined) {
+      chat.maxContextMessagesOverride = null;
+      changed = true;
+    }
+  }
+
+  return { store: normalized, changed };
 }
 
 export async function getStore(): Promise<RootStore> {

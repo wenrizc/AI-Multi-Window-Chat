@@ -20,7 +20,7 @@ async function main() {
   });
 
   const mod = await import(pathToFileURL(outfile).href);
-  mod.runAllTests();
+  await mod.runAllTests();
   console.log('Shared and i18n tests passed.');
 }
 

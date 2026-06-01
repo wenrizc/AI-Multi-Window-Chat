@@ -6,7 +6,10 @@ import {
   addUsage,
   clampSearchRounds,
   escapeHtml,
-  formatUsageLabel
+  formatUsageLabel,
+  normalizeMaxContextMessages,
+  sliceMessageWindow,
+  writeTextToClipboard
 } from '../src/shared/utils';
 import { normalizeUsagePayload } from '../src/shared/parsers';
 
@@ -23,7 +26,7 @@ function collectI18nKeysFromHtml(filePath: string): string[] {
   return [...keys];
 }
 
-export function runSharedTests() {
+export async function runSharedTests() {
   const usage = normalizeUsagePayload({
     prompt_tokens: 120,
     completion_tokens: 80,
@@ -46,7 +49,14 @@ export function runSharedTests() {
 
 
   const store = createEmptyStore();
-  assert.equal(store.featureSettings.defaultStreaming, true);
+  assert.equal(store.featureSettings.search.enabledByDefault, false);
+  assert.equal(store.featureSettings.defaultStreaming, false);
+
+  assert.equal(normalizeMaxContextMessages(''), null);
+  assert.equal(normalizeMaxContextMessages(0), null);
+  assert.equal(normalizeMaxContextMessages('6'), 6);
+  assert.deepEqual(sliceMessageWindow([1, 2, 3, 4], null), [1, 2, 3, 4]);
+  assert.deepEqual(sliceMessageWindow([1, 2, 3, 4], 2), [3, 4]);
 
   assert.equal(clampSearchRounds(0), 1);
   assert.equal(clampSearchRounds(1), 1);
@@ -124,6 +134,80 @@ export function runSharedTests() {
     }),
     'In 120 | Out 80 | Reason 15'
   );
+
+  {
+    let copiedText = '';
+    const env = {
+      navigator: {
+        clipboard: {
+          async writeText(value: string) {
+            copiedText = value;
+          }
+        }
+      }
+    };
+
+    const copied = await writeTextToClipboard('assistant reply', env as never);
+    assert.equal(copied, true);
+    assert.equal(copiedText, 'assistant reply');
+  }
+
+  {
+    const events: string[] = [];
+    const body = {
+      appendChild(node: unknown) {
+        events.push(`append:${String(node === textarea)}`);
+      },
+      removeChild(node: unknown) {
+        events.push(`remove:${String(node === textarea)}`);
+      }
+    };
+    const textarea = {
+      value: '',
+      style: {} as Record<string, string>,
+      setAttribute(name: string, value: string) {
+        events.push(`attr:${name}=${value}`);
+      },
+      focus() {
+        events.push('focus');
+      },
+      select() {
+        events.push('select');
+      }
+    };
+    const env = {
+      navigator: {
+        clipboard: {
+          async writeText() {
+            throw new Error('clipboard denied');
+          }
+        }
+      },
+      document: {
+        body,
+        createElement(tagName: string) {
+          assert.equal(tagName, 'textarea');
+          return textarea;
+        },
+        execCommand(command: string) {
+          events.push(`exec:${command}`);
+          return true;
+        }
+      }
+    };
+
+    const copied = await writeTextToClipboard('fallback copy', env as never);
+    assert.equal(copied, true);
+    assert.equal(textarea.value, 'fallback copy');
+    assert.deepEqual(events, [
+      'attr:readonly=',
+      'append:true',
+      'focus',
+      'select',
+      'exec:copy',
+      'remove:true'
+    ]);
+  }
 }
 
 function runI18nTests() {
@@ -142,15 +226,31 @@ function runI18nTests() {
     'chat__statusGenerating',
     'chat__statusDecidingSearch',
     'chat__statusSearchingFor',
+    'chat__statusStopping',
+    'chat__statusStopped',
+    'chat__statusModelNoStreaming',
+    'chat__statusPromptUnavailable',
     'chat__statusConfigureTavilyFirst',
     'chat__statusTavilyReturned',
+    'chat__errorRequestFailed',
+    'chat__errorAuthFailed',
+    'chat__errorModelUnavailable',
+    'chat__errorTimeout',
+    'chat__errorNetwork',
+    'chat__errorServiceStatus',
+    'chat__errorParseFailed',
     'chat__btnStop',
+    'chat__btnCopyMessage',
+    'chat__btnCopiedMessage',
+    'chat__inputPlaceholder',
     'chat__reasoningSummary',
     'chat__settingsModel',
     'chat__settingsPrompt',
     'chat__settingsSearch',
     'chat__settingsStreaming',
+    'chat__settingsContextWindow',
     'chat__streamingToggle',
+    'chat__maxContextMessagesPlaceholder',
     'chat__toolCalls',
     'chat__toolStatusPending',
     'chat__toolStatusDone',
@@ -161,7 +261,10 @@ function runI18nTests() {
     'popup__labelTransport',
     'popup__labelReasoningFormat',
     'popup__supportsStreaming',
+    'popup__labelMaxContextMessages',
     'popup__labelDefaultTemperature',
+    'popup__reasoningFormatHelp',
+    'popup__maxContextMessagesPlaceholder',
     'popup__labelTavilyApiKey',
     'popup__labelSearchDepth',
     'popup__labelMaxSearchResults',
@@ -172,8 +275,6 @@ function runI18nTests() {
     'popup__timeRangeMonth',
     'popup__timeRangeYear',
     'popup__timeRangeAll',
-    'popup__searchEnabledByDefault',
-    'popup__defaultStreamingEnabled',
     'popup__emptyProviders',
     'prompt__emptyState',
     'popup__untitledProvider',
@@ -182,6 +283,7 @@ function runI18nTests() {
     'common__unknownError',
     'export__updatedAt',
     'export__sources',
+    'history__exportFormatJson',
     'content__btnSettings',
     'content__btnMinimize',
     'content__btnClose',
@@ -194,6 +296,11 @@ function runI18nTests() {
   for (const key of requiredKeys) {
     assert.ok(en[key], `Missing en key: ${key}`);
     assert.ok(zh[key], `Missing zh key: ${key}`);
+  }
+
+  for (const key of ['chat__statusSearchingFor', 'chat__statusTavilyReturned', 'chat__errorServiceStatus']) {
+    assert.match(en[key].message, /\$1/, `Missing en placeholder in ${key}`);
+    assert.match(zh[key].message, /\$1/, `Missing zh placeholder in ${key}`);
   }
 
   assert.equal('prompt__empty' in en, false);
@@ -212,7 +319,407 @@ function runI18nTests() {
   }
 }
 
-export function runAllTests() {
-  runSharedTests();
+function runChatWindowLayoutTests() {
+  const html = fs.readFileSync(path.join(process.cwd(), 'chat-window.html'), 'utf8');
+  const css = fs.readFileSync(path.join(process.cwd(), 'chat-window.css'), 'utf8');
+  const chatTs = fs.readFileSync(path.join(process.cwd(), 'src/chat/index.ts'), 'utf8');
+
+  assert.match(
+    html,
+    /<div class="chat-settings-panel chat-settings-popover"[^>]*id="settingsPanel"[^>]*hidden>/,
+    'Chat settings should render as a floating popover panel.'
+  );
+  assert.match(
+    css,
+    /\.chat-container\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*grid-auto-rows:\s*min-content;/s,
+    'Chat layout should give only the messages area remaining height and auto-size bottom controls.'
+  );
+  assert.match(
+    css,
+    /\.chat-settings-popover\s*\{[^}]*position:\s*absolute;/s,
+    'Chat settings panel should be positioned independently from the bottom composer.'
+  );
+  assert.match(
+    css,
+    /#messageInput\s*\{[^}]*min-height:\s*40px;/s,
+    'Message input should use the compact single-line height.'
+  );
+  assert.match(
+    css,
+    /\.send-btn\s*\{[^}]*width:\s*40px;[^}]*height:\s*40px;/s,
+    'Send button should match the compact composer height.'
+  );
+  assert.equal(
+    html.includes('class="chat-status-bar"'),
+    false,
+    'Idle/status bar should not reserve space above the composer.'
+  );
+  assert.equal(html.includes('id="statusText"'), false, 'Hidden status text should be removed entirely.');
+  assert.match(
+    html,
+    /<div id="composerStatus" class="composer-status" role="status" aria-live="polite" hidden>/,
+    'Composer status should live inside the input composer and stay hidden while idle.'
+  );
+  assert.match(html, /id="composerStatusText"/, 'Composer status should have a dedicated visible text node.');
+  assert.match(
+    html,
+    /<input id="maxContextMessagesInput"[^>]*data-i18n-placeholder="chat__maxContextMessagesPlaceholder"/,
+    'Chat settings should expose a session-level context window input.'
+  );
+  assert.match(
+    css,
+    /\.message-footer\s*\{[^}]*justify-content:\s*space-between;/s,
+    'Assistant message footers should separate usage text from footer actions.'
+  );
+  assert.match(
+    css,
+    /\.message-copy-btn\s*\{[^}]*border-radius:\s*999px;[^}]*cursor:\s*pointer;[^}]*justify-content:\s*center;/s,
+    'Assistant message footers should style the copy action as a pill-shaped icon button.'
+  );
+  assert.match(
+    chatTs,
+    /chat__btnCopyMessage/,
+    'Chat logic should render a localized copy button for assistant messages.'
+  );
+  assert.match(
+    chatTs,
+    /message-copy-icon/,
+    'Chat logic should render an icon inside the assistant message copy button.'
+  );
+  assert.match(
+    chatTs,
+    /writeTextToClipboard\(/,
+    'Copying an assistant response should use the shared clipboard helper so fallback copy paths work.'
+  );
+  assert.match(
+    chatTs,
+    /chat__btnCopiedMessage/,
+    'Chat logic should expose a copied state for the assistant message copy button.'
+  );
+  assert.equal(css.includes('.sr-only'), false, 'No hidden status-only utility should remain in chat CSS.');
+  assert.match(css, /\.composer-status\[hidden\]\s*\{[^}]*display:\s*none;/s, 'Composer status should not reserve space while idle.');
+  assert.match(css, /\.composer-status\[data-variant="busy"\]/, 'Composer status should style active running state.');
+  assert.match(css, /\.composer-status\[data-variant="warning"\]/, 'Composer status should style configuration warnings.');
+  assert.match(css, /\.composer-status\[data-variant="error"\]/, 'Composer status should style request failures.');
+  assert.equal(chatTs.includes('statusText'), false, 'Chat logic should not depend on a removed status element.');
+  assert.equal(chatTs.includes('setStatus('), false, 'Chat logic should not write hidden status text.');
+  assert.match(chatTs, /setComposerStatus\(/, 'Chat logic should render visible inline composer statuses.');
+  assert.match(chatTs, /clearComposerStatus\(/, 'Chat logic should be able to hide idle composer statuses.');
+  assert.match(chatTs, /COMPOSER_STATUS_AUTO_HIDE_MS\s*=\s*1000/, 'Completed and stopped statuses should auto-hide after 1 second.');
+  assert.match(chatTs, /case 'statusUpdate':[\s\S]*this\.setComposerStatus\(event\.message, 'busy'\)/, 'Stream status updates should be shown inline.');
+  assert.match(chatTs, /case 'completed':[\s\S]*chat__statusCompleted[\s\S]*COMPOSER_STATUS_AUTO_HIDE_MS/, 'Completed status should be shown briefly.');
+  assert.match(chatTs, /case 'aborted':[\s\S]*chat__statusStopped[\s\S]*COMPOSER_STATUS_AUTO_HIDE_MS/, 'Stopped status should be shown briefly.');
+  assert.match(chatTs, /formatChatFailure\(/, 'Request failures should be mapped to localized messages.');
+  assert.equal(html.includes('id="stopBtn"'), false, 'Stop should be handled by the primary send button.');
+  assert.match(html, /class="send-icon"/, 'Send button should include a send icon state.');
+  assert.match(html, /class="stop-icon"/, 'Send button should include a stop icon state.');
+  assert.match(css, /\.send-btn\.is-loading\s*\{[^}]*background:\s*var\(--danger\);/s, 'Send button should visibly become the stop control while loading.');
+  assert.match(chatTs, /handlePrimaryAction\(\)/, 'Primary button should route between send and stop actions.');
+  assert.match(chatTs, /sendBtn\.classList\.toggle\('is-loading', active\)/, 'Loading state should be reflected on the primary button.');
+  assert.match(
+    chatTs,
+    /try\s*\{[\s\S]*this\.port\.postMessage\(/,
+    'Chat sends should guard request setup and dispatch after entering loading state.'
+  );
+  assert.match(
+    chatTs,
+    /catch \(error\)\s*\{[\s\S]*this\.resetLoadingState\(\);[\s\S]*this\.setComposerStatus\(this\.formatChatFailure\(getErrorMessage\(error\)\), 'error'\);[\s\S]*\}/,
+    'Chat sends should recover from synchronous send failures instead of leaving the UI generating forever.'
+  );
+  assert.match(chatTs, /private streamingOverride: boolean \| null = null;/, 'Chat state should track per-session streaming overrides.');
+  assert.match(chatTs, /private maxContextMessagesOverride: number \| null = null;/, 'Chat state should track per-session message-window overrides.');
+  assert.match(chatTs, /this\.elements\.streamingToggle\.addEventListener\('change'/, 'Chat settings should allow session-level streaming overrides.');
+  assert.match(chatTs, /this\.elements\.maxContextMessagesInput\.addEventListener\('change'/, 'Chat settings should allow session-level context window overrides.');
+  assert.match(chatTs, /sliceMessageWindow\(/, 'Chat requests should apply a sliding message window before sending.');
+  assert.match(chatTs, /streamingOverride:\s*this\.streamingOverride/, 'Chat requests should persist the per-session streaming override.');
+  assert.match(chatTs, /maxContextMessagesOverride:\s*this\.maxContextMessagesOverride/, 'Chat requests should persist the per-session context window override.');
+  assert.match(
+    css,
+    /\.message-assistant\s+\.message-content\s*\{[^}]*white-space:\s*normal;[^}]*display:\s*flow-root;/s,
+    'Assistant markdown output should not render parser whitespace as visible top gaps.'
+  );
+  assert.match(
+    css,
+    /\.message-user\s+\.message-content\s*\{[^}]*white-space:\s*pre-wrap;/s,
+    'User messages should still preserve typed line breaks.'
+  );
+  assert.match(
+    css,
+    /\.message-content\s*>\s*:first-child\s*\{[^}]*margin-top:\s*0;/s,
+    'Rendered message blocks should not create a top edge gap.'
+  );
+  assert.match(
+    css,
+    /\.message-content\s+(ul|ol),\s*\.message-content\s+(ul|ol)\s*\{[^}]*padding-left:\s*1\.2em;/s,
+    'Rendered markdown lists should keep readable indentation after the global reset.'
+  );
+}
+
+function runSettingsSurfaceLayoutTests() {
+  const popupHtml = fs.readFileSync(path.join(process.cwd(), 'popup.html'), 'utf8');
+  const popupTs = fs.readFileSync(path.join(process.cwd(), 'src/popup/index.ts'), 'utf8');
+  const chatTs = fs.readFileSync(path.join(process.cwd(), 'src/chat/index.ts'), 'utf8');
+  const contentTs = fs.readFileSync(path.join(process.cwd(), 'src/content/index.ts'), 'utf8');
+  const backgroundTs = fs.readFileSync(path.join(process.cwd(), 'src/background/index.ts'), 'utf8');
+  const providerTs = fs.readFileSync(path.join(process.cwd(), 'src/providers/openai-compatible.ts'), 'utf8');
+
+  assert.match(
+    popupHtml,
+    /body\s*\{[^}]*width:\s*568px;[^}]*min-width:\s*568px;/s,
+    'Extension settings popup should keep a stable width instead of collapsing to a narrow strip.'
+  );
+  assert.match(
+    popupHtml,
+    /html,\s*body\s*\{[^}]*height:\s*auto;/s,
+    'Settings popup should use natural height so footer cannot overlap overflowing tab content.'
+  );
+  assert.match(
+    popupHtml,
+    /--panel-list-height:\s*360px;/,
+    'Settings panels should use compact, shared panel height.'
+  );
+  assert.match(
+    popupHtml,
+    /\.tab-content\.active\s*\{[^}]*display:\s*block;/s,
+    'Active settings tab should use natural block flow instead of a compressed flex column.'
+  );
+  assert.match(
+    popupHtml,
+    /\.field-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+    'LLM settings fields should use one control per row.'
+  );
+  assert.match(
+    popupHtml,
+    /\.search-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+    'Search settings fields should use one control per row.'
+  );
+  assert.match(
+    popupHtml,
+    /id="supportsStreamingCheckbox"[\s\S]*data-i18n="popup__supportsStreaming"/,
+    'LLM settings should expose a per-model streaming option.'
+  );
+  assert.match(
+    popupHtml,
+    /id="maxContextMessagesInput"[\s\S]*data-i18n-placeholder="popup__maxContextMessagesPlaceholder"/,
+    'LLM settings should expose a per-model context window input.'
+  );
+  assert.equal(popupHtml.includes('id="searchEnabledByDefaultCheckbox"'), false, 'Search settings should not expose default search toggle.');
+  assert.equal(popupHtml.includes('id="defaultStreamingCheckbox"'), false, 'Search settings should not expose default streaming toggle.');
+  assert.match(
+    popupTs,
+    /supportsStreamingCheckbox:[\s\S]*getElementById\('supportsStreamingCheckbox'\)/,
+    'Popup logic should bind the per-model streaming checkbox.'
+  );
+  assert.match(
+    popupTs,
+    /supportsStreaming:\s*elements\.supportsStreamingCheckbox\.checked/,
+    'Saving a provider should persist the per-model streaming setting.'
+  );
+  assert.match(
+    popupTs,
+    /maxContextMessagesInput:[\s\S]*getElementById\('maxContextMessagesInput'\)/,
+    'Popup logic should bind the per-model context window input.'
+  );
+  assert.match(
+    popupTs,
+    /maxContextMessages:\s*normalizeMaxContextMessages\(elements\.maxContextMessagesInput\.value\)/,
+    'Saving a provider should persist the per-model context window setting.'
+  );
+  assert.match(
+    chatTs,
+    /model\?\.supportsStreaming/,
+    'Chat settings should still default session streaming from the model configuration.'
+  );
+  assert.doesNotMatch(
+    chatTs,
+    /this\.elements\.streamingToggle\.disabled\s*=\s*true;/,
+    'Chat settings should no longer lock streaming to the model setting.'
+  );
+  assert.match(
+    providerTs,
+    /const shouldStream = input\.streamingEnabled !== false;/,
+    'Provider requests should respect the resolved session streaming setting.'
+  );
+  assert.match(
+    popupHtml,
+    /class="reasoning-help"[\s\S]*data-i18n-html="popup__reasoningFormatHelp"/,
+    'Reasoning format should include a hover help popover.'
+  );
+  assert.match(
+    popupHtml,
+    /\.reasoning-help:hover\s+\.reasoning-tooltip/s,
+    'Reasoning help should show the popover on hover.'
+  );
+  assert.match(
+    popupHtml,
+    /\.footer\s*\{[^}]*background:\s*transparent;[^}]*border:\s*none;[^}]*box-shadow:\s*none;/s,
+    'Footer version text should sit directly on the popup background, not inside a card.'
+  );
+  assert.equal(popupHtml.includes('data-format="text"'), false, 'Text export format should be removed.');
+  assert.match(popupHtml, /data-format="json"/, 'Exports should offer JSON format.');
+  assert.match(popupHtml, /data-format="markdown"/, 'Exports should offer Markdown format.');
+  assert.match(popupHtml, /accept="\.json,\s*\.md,\s*\.markdown"/, 'Config imports should accept JSON and Markdown files.');
+  assert.doesNotMatch(
+    popupHtml,
+    /\.tab-content\s*\{[^}]*flex:\s*1 1 auto;/s,
+    'Settings tabs should not flex-shrink around fixed-height inner panels.'
+  );
+  assert.doesNotMatch(
+    popupHtml,
+    /\.config-grid\s*\{[^}]*flex:\s*1 1 auto;/s,
+    'Settings grids should not use flex sizing inside the popup.'
+  );
+  assert.doesNotMatch(
+    popupHtml,
+    /\.footer\s*\{[^}]*position:\s*(fixed|absolute|sticky)/s,
+    'Settings footer should remain in normal document flow.'
+  );
+  assert.doesNotMatch(
+    popupHtml,
+    /@media\s*\(max-width:\s*720px\)[\s\S]*?body\s*\{[\s\S]*?width:\s*100%;/s,
+    'The desktop-sized extension popup breakpoint should not override body width to 100%.'
+  );
+  assert.match(
+    contentTs,
+    /DEFAULT_WINDOW_WIDTH\s*=\s*460/,
+    'Injected chat windows should define an explicit default width in script, not only CSS.'
+  );
+  assert.match(
+    contentTs,
+    /wrapper\.style\.width\s*=\s*`\$\{AIMultiWindow\.DEFAULT_WINDOW_WIDTH\}px`;/,
+    'Injected chat windows should set their initial width inline to resist host-page CSS.'
+  );
+  assert.match(
+    contentTs,
+    /ensureSettingsPanelSpace\(wrapper\);[\s\S]*TOGGLE_SETTINGS_PANEL/,
+    'Opening settings should first ensure enough window width for the settings panel.'
+  );
+  assert.match(
+    contentTs,
+    /event\.key\.toLowerCase\(\)\s*===\s*'m'/,
+    'Injected page shortcuts should close the latest chat window with Alt+M.'
+  );
+  assert.match(
+    contentTs,
+    /private nextFreshWindowNumber = 1;/,
+    'Fresh chat windows should use a page-local incremental title counter.'
+  );
+  assert.match(
+    contentTs,
+    /private windowTitles = new Map<string, string>\(\);/,
+    'Injected chat windows should track editable titles per window.'
+  );
+  assert.match(
+    contentTs,
+    /private createDefaultWindowTitle\(\)/,
+    'Injected chat windows should centralize default title generation.'
+  );
+  assert.match(
+    contentTs,
+    /private beginTitleEdit\(windowId: string\)/,
+    'Injected chat windows should expose an inline title edit flow.'
+  );
+  assert.match(
+    contentTs,
+    /private commitWindowTitle\(windowId: string, nextTitle: string\)/,
+    'Edited window titles should be committed through a dedicated helper.'
+  );
+  assert.match(
+    contentTs,
+    /chat\?\.title\s*\|\|\s*this\.createDefaultWindowTitle\(\)/,
+    'Restored windows should preserve their stored title while fresh windows get a generated one.'
+  );
+  assert.match(
+    contentTs,
+    /windowTitle:\s*this\.windowTitles\.get\(windowId\)/,
+    'Injected page shells should pass the current visible title into chat iframe initialization.'
+  );
+  assert.match(
+    chatTs,
+    /private windowTitle = '';/,
+    'Chat iframe state should track the current shell title.'
+  );
+  assert.match(
+    chatTs,
+    /windowTitle\?: string;/,
+    'Chat initialization payload should include the shell title.'
+  );
+  assert.match(
+    chatTs,
+    /if \(event\.data\?\.type === 'WINDOW_TITLE_CHANGED'\)/,
+    'Chat iframe should accept title-change messages from the page shell.'
+  );
+  assert.match(
+    chatTs,
+    /windowTitle:\s*this\.windowTitle/,
+    'Chat requests should send the current visible window title to persistence.'
+  );
+  assert.match(
+    contentTs,
+    /addEventListener\('click'/,
+    'Window titles should be editable from the page shell.'
+  );
+  assert.match(
+    backgroundTs,
+    /title:\s*existing\?\.title\s*\|\|\s*input\.request\.windowTitle\s*\|\|/s,
+    'Persisted chats should prefer the edited shell title before deriving one from message text.'
+  );
+  assert.doesNotMatch(
+    backgroundTs,
+    /title:\s*existing\?\.title\s*\|\|\s*compactText\(input\.request\.userMessage\)/,
+    'Chat persistence should no longer fall back directly to the first user message when no custom title was provided.'
+  );
+  assert.match(
+    contentTs,
+    /private windowStack: string\[\] = \[\];/,
+    'Injected chat windows should maintain a per-page stack of window ids.'
+  );
+  assert.match(
+    contentTs,
+    /private activateWindow\(windowId: string\)/,
+    'Injected chat windows should expose a helper to move a window to the top of the page stack.'
+  );
+  assert.match(
+    contentTs,
+    /wrapper\.addEventListener\('pointerdown', \(\) => \{\s*this\.activateWindow\(windowId\);/s,
+    'Interacting with a chat window should promote it to the top of the page stack.'
+  );
+  assert.match(
+    contentTs,
+    /const lastWindowId = this\.windowStack\.pop\(\);[\s\S]*this\.closeWindow\(lastWindowId\);/s,
+    'Alt+M should close the current stack-top chat window instead of the last-created map entry.'
+  );
+  assert.match(
+    contentTs,
+    /this\.windowStack = this\.windowStack\.filter\(\(id\) => id !== windowId\);[\s\S]*this\.windowStack\.push\(windowId\);[\s\S]*this\.syncWindowStack\(\);/s,
+    'Activating a chat window should reorder the page stack and refresh z-index layering.'
+  );
+  assert.doesNotMatch(
+    contentTs,
+    /event\.key\.toLowerCase\(\)\s*===\s*'w'/,
+    'Injected page shortcuts should no longer close chat windows with Alt+W.'
+  );
+}
+
+function runContentToolbarLayoutTests() {
+  const css = fs.readFileSync(path.join(process.cwd(), 'styles.css'), 'utf8');
+
+  assert.match(
+    css,
+    /\.ai-selection-toolbar\s*\{[^}]*padding:\s*0;[^}]*border:\s*none;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s,
+    'Selection toolbar container should not draw an outer frame around the AI chat button.'
+  );
+  assert.match(
+    css,
+    /\.ai-toolbar-btn:hover\s*\{[^}]*border-color:\s*#bfdbfe;/s,
+    'The AI chat button should keep its own highlighted hover border.'
+  );
+}
+
+export async function runAllTests() {
+  await runSharedTests();
   runI18nTests();
+  runChatWindowLayoutTests();
+  runSettingsSurfaceLayoutTests();
+  runContentToolbarLayoutTests();
 }

@@ -40,6 +40,14 @@ export function toNullableInt(value: unknown): number | null {
   return normalized >= 0 ? normalized : null;
 }
 
+export function normalizeMaxContextMessages(value: unknown): number | null {
+  const parsed = toNullableInt(value);
+  if (parsed === null || parsed === 0) {
+    return null;
+  }
+  return parsed;
+}
+
 export function compactText(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -126,6 +134,14 @@ export function getModel(provider: ProviderConfig, modelId?: string | null): Mod
   );
 }
 
+export function sliceMessageWindow<T>(messages: T[], maxContextMessages: number | null | undefined): T[] {
+  const limit = normalizeMaxContextMessages(maxContextMessages);
+  if (limit === null) {
+    return [...messages];
+  }
+  return messages.slice(-limit);
+}
+
 export function clampSearchRounds(value: number | null | undefined): number {
   if (!Number.isFinite(value)) {
     return 1;
@@ -156,4 +172,43 @@ export function formatUsageLabel(usage: UsageMetrics | null): string {
     parts.push(i18nMessage('usage__reasoningTokens', String(usage.reasoningTokens)));
   }
   return parts.join(' | ') || i18nMessage('usage__unavailable');
+}
+
+type ClipboardEnvironment = {
+  navigator?: Pick<Navigator, 'clipboard'>;
+  document?: Pick<Document, 'body' | 'createElement' | 'execCommand'>;
+};
+
+export async function writeTextToClipboard(value: string, env: ClipboardEnvironment = globalThis as ClipboardEnvironment): Promise<boolean> {
+  try {
+    await env.navigator?.clipboard?.writeText(value);
+    return true;
+  } catch {
+    // Fallback to execCommand for embedded extension iframes where Clipboard API can be unavailable.
+  }
+
+  const doc = env.document;
+  if (!doc?.body) {
+    return false;
+  }
+
+  const textarea = doc.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  doc.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    return doc.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    doc.body.removeChild(textarea);
+  }
 }

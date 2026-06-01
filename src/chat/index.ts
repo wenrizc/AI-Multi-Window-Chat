@@ -11,9 +11,34 @@ import type {
   ProviderConfig,
   StreamEvent
 } from '../shared/types';
-import { escapeHtml, formatUsageLabel, getModel, nowIso, uid } from '../shared/utils';
+import {
+  escapeHtml,
+  formatUsageLabel,
+  getModel,
+  normalizeMaxContextMessages,
+  nowIso,
+  sliceMessageWindow,
+  uid,
+  writeTextToClipboard
+} from '../shared/utils';
 
 marked.use(markedKatex({ throwOnError: false }));
+
+const COMPOSER_STATUS_AUTO_HIDE_MS = 1000;
+const COPY_BUTTON_RESET_MS = 1200;
+const COPY_ICON_SVG = `
+  <svg class="message-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+    <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+  </svg>
+`;
+const COPIED_ICON_SVG = `
+  <svg class="message-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="m5 12 4 4L19 6"></path>
+  </svg>
+`;
+
+type ComposerStatusVariant = 'busy' | 'success' | 'warning' | 'error';
 
 type AssistantRenderState = {
   container: HTMLElement;
@@ -27,6 +52,7 @@ type AssistantRenderState = {
 
 class ChatWindowApp {
   private chatId = uid('chat');
+  private windowTitle = '';
   private profileId: string | null = null;
   private promptId: string | null = null;
   private messages: PersistedMessage[] = [];
@@ -43,25 +69,33 @@ class ChatWindowApp {
   private currentModelId: string | null = null;
   private settingsOpen = false;
   private streamingEnabled = true;
+  private streamingOverride: boolean | null = null;
+  private maxContextMessages: number | null = null;
+  private maxContextMessagesOverride: number | null = null;
   private currentMode: PersistedMessage['mode'] = 'chat';
+  private composerStatusTimer: number | null = null;
+  private composerStatusKey: string | null = null;
+  private copyButtonTimers = new WeakMap<HTMLButtonElement, number>();
 
   private elements = {
     messagesContainer: document.getElementById('messagesContainer') as HTMLElement,
+    composerStatus: document.getElementById('composerStatus') as HTMLElement,
+    composerStatusText: document.getElementById('composerStatusText') as HTMLElement,
     messageInput: document.getElementById('messageInput') as HTMLTextAreaElement,
     sendBtn: document.getElementById('sendBtn') as HTMLButtonElement,
-    stopBtn: document.getElementById('stopBtn') as HTMLButtonElement,
-    loadingIndicator: document.getElementById('loadingIndicator') as HTMLElement,
     promptSelect: document.getElementById('promptSelect') as HTMLSelectElement,
     profileSelect: document.getElementById('profileSelect') as HTMLSelectElement,
     searchToggle: document.getElementById('searchToggle') as HTMLInputElement,
     streamingToggle: document.getElementById('streamingToggle') as HTMLInputElement,
-    statusText: document.getElementById('statusText') as HTMLElement,
-    settingsPanel: document.getElementById('settingsPanel') as HTMLElement
+    maxContextMessagesInput: document.getElementById('maxContextMessagesInput') as HTMLInputElement,
+    settingsPanel: document.getElementById('settingsPanel') as HTMLElement,
+    settingsCloseBtn: document.getElementById('settingsCloseBtn') as HTMLButtonElement
   };
 
   constructor() {
     this.init().catch((error) => {
-      this.setStatus(t('chat__statusInitFailed', error instanceof Error ? error.message : String(error)));
+      console.error(error);
+      this.setLocalizedComposerStatus('chat__statusInitFailed', 'error', undefined, getErrorMessage(error));
     });
   }
 
@@ -81,6 +115,10 @@ class ChatWindowApp {
         this.applyInitPayload(event.data);
         return;
       }
+      if (event.data?.type === 'WINDOW_TITLE_CHANGED') {
+        this.windowTitle = typeof event.data.title === 'string' ? event.data.title : this.windowTitle;
+        return;
+      }
       if (event.data?.type === 'TOGGLE_SETTINGS_PANEL') {
         this.toggleSettingsPanel();
       }
@@ -88,7 +126,6 @@ class ChatWindowApp {
 
     await this.reloadStore();
     this.renderSelectors();
-    this.setStatus(t('chat__statusIdle'));
   }
 
   private async reloadStore() {
@@ -105,25 +142,33 @@ class ChatWindowApp {
     }
 
     this.elements.searchToggle.checked = store.featureSettings.search.enabledByDefault;
-    this.streamingEnabled = store.featureSettings.defaultStreaming;
-    this.elements.streamingToggle.checked = this.streamingEnabled;
   }
 
   private applyInitPayload(payload: {
     chatId?: string;
+    windowTitle?: string;
     profileId?: string | null;
     promptId?: string | null;
+    streamingOverride?: boolean | null;
+    maxContextMessagesOverride?: number | null;
     historyMessages?: PersistedMessage[];
     initialMessage?: string;
   }) {
     this.chatId = payload.chatId || this.chatId;
+    this.windowTitle = payload.windowTitle || this.windowTitle;
     this.profileId = payload.profileId || this.profileId;
     this.promptId = payload.promptId || this.promptId;
+    if ('streamingOverride' in payload) {
+      this.streamingOverride = payload.streamingOverride ?? null;
+    }
+    if ('maxContextMessagesOverride' in payload) {
+      this.maxContextMessagesOverride = payload.maxContextMessagesOverride ?? null;
+    }
 
     if (Array.isArray(payload.historyMessages) && payload.historyMessages.length > 0) {
       this.messages = payload.historyMessages;
       this.renderHistory().catch((error) => {
-        this.setStatus(t('chat__statusInitFailed', error instanceof Error ? error.message : String(error)));
+        console.error(error);
       });
     }
 
@@ -136,25 +181,75 @@ class ChatWindowApp {
   }
 
   private bindEvents() {
-    this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-    this.elements.stopBtn.addEventListener('click', () => this.abortCurrentRequest());
+    this.elements.sendBtn.addEventListener('click', () => this.handlePrimaryAction());
+    this.elements.settingsCloseBtn.addEventListener('click', () => this.setSettingsPanelOpen(false));
     this.elements.messageInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        this.sendMessage();
+        void this.sendMessage();
       }
     });
-    this.elements.messageInput.addEventListener('input', () => this.adjustTextareaHeight());
+    this.elements.messageInput.addEventListener('input', () => {
+      this.adjustTextareaHeight();
+      if (!this.isLoading) {
+        this.clearComposerStatus();
+      }
+    });
     this.elements.profileSelect.addEventListener('change', () => {
       this.profileId = this.elements.profileSelect.value || null;
+      this.clearComposerStatus();
       this.syncStreamingControl();
     });
     this.elements.promptSelect.addEventListener('change', () => {
       this.promptId = this.elements.promptSelect.value || null;
+      if (!this.promptId || this.prompts.some((prompt) => prompt.id === this.promptId)) {
+        this.clearComposerStatus();
+      }
+    });
+    this.elements.searchToggle.addEventListener('change', () => {
+      if (!this.elements.searchToggle.checked || this.featureSettings?.search.tavilyApiKey.trim()) {
+        this.clearComposerStatus();
+      }
     });
     this.elements.streamingToggle.addEventListener('change', () => {
-      this.streamingEnabled = this.elements.streamingToggle.checked;
+      const model = this.getCurrentModel();
+      const modelDefault = model?.supportsStreaming ?? true;
+      const next = this.elements.streamingToggle.checked;
+      this.streamingOverride = next === modelDefault ? null : next;
+      this.syncSessionSettingsFromModel();
+      this.clearComposerStatus();
     });
+    this.elements.maxContextMessagesInput.addEventListener('change', () => {
+      const model = this.getCurrentModel();
+      const modelDefault = model?.maxContextMessages ?? null;
+      const next = normalizeMaxContextMessages(this.elements.maxContextMessagesInput.value);
+      this.maxContextMessagesOverride = next === modelDefault ? null : next;
+      this.syncSessionSettingsFromModel();
+      this.clearComposerStatus();
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!this.settingsOpen) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Node && this.elements.settingsPanel.contains(target)) {
+        return;
+      }
+      this.setSettingsPanelOpen(false);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && this.settingsOpen) {
+        this.setSettingsPanelOpen(false);
+      }
+    });
+  }
+
+  private handlePrimaryAction() {
+    if (this.isLoading) {
+      this.abortCurrentRequest();
+      return;
+    }
+    void this.sendMessage();
   }
 
   private createReasoningBlock(summary: string): HTMLElement {
@@ -220,20 +315,83 @@ class ChatWindowApp {
   private setSettingsPanelOpen(open: boolean) {
     this.settingsOpen = open;
     this.elements.settingsPanel.hidden = !open;
+    if (open) {
+      window.requestAnimationFrame(() => {
+        this.elements.profileSelect.focus({ preventScroll: true });
+      });
+    }
   }
 
   private toggleSettingsPanel() {
     this.setSettingsPanelOpen(!this.settingsOpen);
   }
 
+  private hydrateMessageFooter(footer: HTMLElement, getContent: () => string) {
+    footer.textContent = '';
+
+    const usageLabel = document.createElement('span');
+    usageLabel.className = 'message-footer-usage';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'message-copy-btn';
+    this.setCopyButtonState(copyBtn, false);
+    copyBtn.addEventListener('click', () => {
+      void this.copyAssistantMessage(copyBtn, getContent);
+    });
+
+    footer.append(usageLabel, copyBtn);
+  }
+
   private setUsageFooter(footer: HTMLElement, usage: PersistedMessage['tokenUsage']) {
+    const usageLabel = footer.querySelector('.message-footer-usage') as HTMLElement | null;
     if (!usage) {
-      footer.textContent = '';
-      footer.style.display = 'none';
+      if (usageLabel) {
+        usageLabel.textContent = '';
+      } else {
+        footer.textContent = '';
+      }
       return;
     }
+
+    if (usageLabel) {
+      usageLabel.textContent = formatUsageLabel(usage);
+      return;
+    }
+
     footer.textContent = formatUsageLabel(usage);
-    footer.style.display = '';
+  }
+
+  private setCopyButtonState(button: HTMLButtonElement, copied: boolean) {
+    const label = copied ? t('chat__btnCopiedMessage') : t('chat__btnCopyMessage');
+    button.innerHTML = copied ? COPIED_ICON_SVG : COPY_ICON_SVG;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.dataset.copied = copied ? 'true' : 'false';
+  }
+
+  private async copyAssistantMessage(button: HTMLButtonElement, getContent: () => string) {
+    const content = getContent().trim();
+    if (!content) {
+      return;
+    }
+
+    const copied = await writeTextToClipboard(content);
+    if (!copied) {
+      return;
+    }
+
+    const existingTimer = this.copyButtonTimers.get(button);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    this.setCopyButtonState(button, true);
+    const resetTimer = window.setTimeout(() => {
+      this.setCopyButtonState(button, false);
+      this.copyButtonTimers.delete(button);
+    }, COPY_BUTTON_RESET_MS);
+    this.copyButtonTimers.set(button, resetTimer);
   }
 
   private renderSelectors() {
@@ -255,16 +413,33 @@ class ChatWindowApp {
     this.syncStreamingControl();
   }
 
-  private syncStreamingControl() {
+  private getCurrentModel() {
     const provider = this.providers.find((item) => item.id === this.profileId);
-    const model = provider ? getModel(provider, provider.defaultModel) : null;
-    const supported = model?.supportsStreaming ?? true;
-    this.elements.streamingToggle.disabled = !supported;
-    if (!supported) {
-      this.elements.streamingToggle.checked = false;
-      return;
+    return provider ? getModel(provider, provider.defaultModel) : null;
+  }
+
+  private syncSessionSettingsFromModel() {
+    const model = this.getCurrentModel();
+    const modelStreaming = model?.supportsStreaming ?? true;
+    const modelMaxContextMessages = model?.maxContextMessages ?? null;
+
+    if (this.streamingOverride !== null && this.streamingOverride === modelStreaming) {
+      this.streamingOverride = null;
     }
+    if (this.maxContextMessagesOverride !== null && this.maxContextMessagesOverride === modelMaxContextMessages) {
+      this.maxContextMessagesOverride = null;
+    }
+
+    this.streamingEnabled = this.streamingOverride ?? modelStreaming;
+    this.maxContextMessages = this.maxContextMessagesOverride ?? modelMaxContextMessages;
     this.elements.streamingToggle.checked = this.streamingEnabled;
+    this.elements.maxContextMessagesInput.value = this.maxContextMessages === null
+      ? ''
+      : String(this.maxContextMessages);
+  }
+
+  private syncStreamingControl() {
+    this.syncSessionSettingsFromModel();
   }
 
   private async renderHistory() {
@@ -312,9 +487,10 @@ class ChatWindowApp {
     content.innerHTML = rendered;
     wrapper.appendChild(content);
 
-    if (message.role === 'assistant' && message.tokenUsage) {
+    if (message.role === 'assistant') {
       const footer = document.createElement('div');
       footer.className = 'message-footer';
+      this.hydrateMessageFooter(footer, () => message.content);
       this.setUsageFooter(footer, message.tokenUsage);
       wrapper.appendChild(footer);
     }
@@ -384,7 +560,7 @@ class ChatWindowApp {
     reasoningWrap.style.display = 'none';
     const toolsWrap = wrapper.querySelector('.message-tools') as HTMLDetailsElement;
     const footer = wrapper.querySelector('.message-footer') as HTMLElement;
-    footer.style.display = 'none';
+    this.hydrateMessageFooter(footer, () => this.currentAssistantText);
 
     return {
       container: wrapper,
@@ -407,20 +583,33 @@ class ChatWindowApp {
       return;
     }
 
-    if (!this.profileId) {
-      this.setStatus(t('chat__statusCreateProviderFirst'));
-      return;
-    }
+    this.clearComposerStatus();
 
-    if (this.elements.searchToggle.checked && !this.featureSettings?.search.tavilyApiKey.trim()) {
-      this.setStatus(t('chat__statusConfigureTavilyFirst'));
+    if (!this.profileId) {
+      this.setLocalizedComposerStatus('chat__statusCreateProviderFirst', 'warning');
       return;
     }
 
     const provider = this.providers.find((item) => item.id === this.profileId);
-    const prompt = this.prompts.find((item) => item.id === this.promptId) ?? null;
     if (!provider) {
-      this.setStatus(t('chat__statusProviderNotFound'));
+      this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+      return;
+    }
+
+    const prompt = this.prompts.find((item) => item.id === this.promptId) ?? null;
+    if (this.promptId && !prompt) {
+      this.setLocalizedComposerStatus('chat__statusPromptUnavailable', 'warning');
+      return;
+    }
+
+    if (this.elements.searchToggle.checked && !this.featureSettings?.search.tavilyApiKey.trim()) {
+      this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
+      return;
+    }
+
+    const model = this.getCurrentModel();
+    if (!model?.modelId) {
+      this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
       return;
     }
 
@@ -435,39 +624,61 @@ class ChatWindowApp {
     this.currentReasoningText = '';
     this.currentToolCalls = [];
     this.showLoading(true);
-    const model = getModel(provider, provider.defaultModel);
-    this.currentModelId = model.modelId;
-    const requestMessages = [
-      ...(prompt?.content ? [{ role: 'system' as const, content: prompt.content }] : []),
-      ...this.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }))
-    ];
+    this.setLocalizedComposerStatus('chat__statusGenerating', 'busy');
 
-    const request: ChatRequest = {
-      requestId: this.currentRequestId,
-      chatId: this.chatId,
-      providerId: provider.id,
-      modelId: model.modelId,
-      promptId: prompt?.id ?? null,
-      userMessage: content,
-      mode: this.currentMode,
-      messages: requestMessages,
-      generationParams: provider.defaultGenerationParams,
-      streamingEnabled: this.streamingEnabled
-    };
+    try {
+      this.syncSessionSettingsFromModel();
+      this.currentModelId = model.modelId;
+      const requestId = this.currentRequestId;
+      if (!requestId) {
+        throw new Error(t('common__unknownError'));
+      }
 
-    this.port.postMessage({
-      type: 'start_chat',
-      payload: request
-    });
+      const requestMessages = [
+        ...(prompt?.content ? [{ role: 'system' as const, content: prompt.content }] : []),
+        ...sliceMessageWindow(
+          this.messages.map((message) => ({
+            role: message.role,
+            content: message.content
+          })),
+          this.maxContextMessages
+        )
+      ];
+
+      const request: ChatRequest = {
+        requestId,
+        chatId: this.chatId,
+        windowTitle: this.windowTitle,
+        providerId: provider.id,
+        modelId: model.modelId,
+        promptId: prompt?.id ?? null,
+        streamingOverride: this.streamingOverride,
+        maxContextMessages: this.maxContextMessages,
+        maxContextMessagesOverride: this.maxContextMessagesOverride,
+        userMessage: content,
+        mode: this.currentMode,
+        messages: requestMessages,
+        generationParams: provider.defaultGenerationParams,
+        streamingEnabled: this.streamingEnabled
+      };
+
+      this.port.postMessage({
+        type: 'start_chat',
+        payload: request
+      });
+    } catch (error) {
+      console.error(error);
+      this.currentAssistantState?.container.remove();
+      this.resetLoadingState();
+      this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
+    }
   }
 
   private abortCurrentRequest() {
     if (!this.currentRequestId) {
       return;
     }
+    this.setLocalizedComposerStatus('chat__statusStopping', 'busy');
     this.port.postMessage({
       type: 'abort_chat',
       requestId: this.currentRequestId
@@ -481,7 +692,7 @@ class ChatWindowApp {
 
     switch (event.type) {
       case 'statusUpdate':
-        this.setStatus(event.message);
+        this.setComposerStatus(event.message, 'busy');
         break;
       case 'contentDelta':
         if (this.currentAssistantState) {
@@ -525,13 +736,16 @@ class ChatWindowApp {
         break;
       case 'completed':
         await this.finishStream(event.response);
+        this.setLocalizedComposerStatus('chat__statusCompleted', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
       case 'aborted':
         this.resetLoadingState();
+        this.setLocalizedComposerStatus('chat__statusStopped', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
       case 'failed':
-        this.setStatus(event.error);
+        console.error(event.error);
         this.resetLoadingState();
+        this.setComposerStatus(this.formatChatFailure(event.error), 'error');
         break;
       default:
         break;
@@ -581,7 +795,6 @@ class ChatWindowApp {
       createdAt: nowIso()
     };
     this.messages.push(message);
-    this.setStatus(t('chat__statusCompleted'));
     this.resetLoadingState();
   }
 
@@ -609,22 +822,121 @@ class ChatWindowApp {
 
   private adjustTextareaHeight() {
     this.elements.messageInput.style.height = 'auto';
-    this.elements.messageInput.style.height = `${Math.min(this.elements.messageInput.scrollHeight, 140)}px`;
+    this.elements.messageInput.style.height = `${Math.min(this.elements.messageInput.scrollHeight, 108)}px`;
   }
 
   private showLoading(active: boolean) {
-    this.elements.loadingIndicator.style.display = active ? 'flex' : 'none';
-    this.elements.stopBtn.disabled = !active;
-    this.elements.sendBtn.disabled = active;
+    this.elements.sendBtn.classList.toggle('is-loading', active);
+    this.elements.sendBtn.title = active ? t('chat__btnStop') : t('chat__btnSend');
+    this.elements.sendBtn.setAttribute('aria-label', active ? t('chat__btnStop') : t('chat__btnSend'));
   }
 
-  private setStatus(text: string) {
-    this.elements.statusText.textContent = text;
+  private setLocalizedComposerStatus(
+    key: string,
+    variant: ComposerStatusVariant,
+    autoHideMs?: number,
+    substitutions?: string | number | Array<string | number>
+  ) {
+    this.setComposerStatus(t(key, substitutions ?? []), variant, autoHideMs, key);
+  }
+
+  private setComposerStatus(
+    message: string,
+    variant: ComposerStatusVariant,
+    autoHideMs?: number,
+    key: string | null = null
+  ) {
+    if (this.composerStatusTimer !== null) {
+      window.clearTimeout(this.composerStatusTimer);
+      this.composerStatusTimer = null;
+    }
+
+    const text = message.trim();
+    if (!text) {
+      this.clearComposerStatus();
+      return;
+    }
+
+    this.composerStatusKey = key;
+    this.elements.composerStatus.dataset.variant = variant;
+    this.elements.composerStatusText.textContent = text;
+    this.elements.composerStatus.hidden = false;
+
+    if (autoHideMs) {
+      this.composerStatusTimer = window.setTimeout(() => {
+        this.clearComposerStatus();
+      }, autoHideMs);
+    }
+  }
+
+  private clearComposerStatus() {
+    if (this.composerStatusTimer !== null) {
+      window.clearTimeout(this.composerStatusTimer);
+      this.composerStatusTimer = null;
+    }
+    this.composerStatusKey = null;
+    this.elements.composerStatus.hidden = true;
+    this.elements.composerStatusText.textContent = '';
+    delete this.elements.composerStatus.dataset.variant;
+  }
+
+  private formatChatFailure(error: string) {
+    const message = error.trim();
+    if (!message) {
+      return t('chat__errorRequestFailed');
+    }
+
+    if (/tavily/i.test(message)) {
+      return message;
+    }
+
+    const providerStatus = message.match(/Provider returned\s+(\d{3})/i);
+    if (providerStatus) {
+      return this.formatServiceStatusFailure(providerStatus[1]);
+    }
+
+    if (/(api\s*key|apikey|auth|unauthorized|forbidden|invalid key|incorrect key|401|403)/i.test(message)) {
+      return t('chat__errorAuthFailed');
+    }
+    if (/(model.*(not found|unavailable|does not exist)|does not exist.*model|404)/i.test(message)) {
+      return t('chat__errorModelUnavailable');
+    }
+    if (/(timeout|timed out|etimedout|408|504)/i.test(message)) {
+      return t('chat__errorTimeout');
+    }
+    if (/(failed to fetch|network|fetch failed|enotfound|econnreset|econnrefused|err_network)/i.test(message)) {
+      return t('chat__errorNetwork');
+    }
+    if (/(json|parse|parsing|unexpected token|unexpected end)/i.test(message)) {
+      return t('chat__errorParseFailed');
+    }
+
+    return t('chat__errorRequestFailed');
+  }
+
+  private formatServiceStatusFailure(statusCode: string) {
+    if (statusCode === '401' || statusCode === '403') {
+      return t('chat__errorAuthFailed');
+    }
+    if (statusCode === '404') {
+      return t('chat__errorModelUnavailable');
+    }
+    if (statusCode === '408' || statusCode === '504') {
+      return t('chat__errorTimeout');
+    }
+    return t('chat__errorServiceStatus', statusCode);
   }
 
   private scrollToBottom() {
     this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
   }
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error || t('common__unknownError'));
 }
 
 new ChatWindowApp();

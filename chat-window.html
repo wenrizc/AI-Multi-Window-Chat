@@ -17,7 +17,16 @@
       </div>
     </div>
 
-    <div class="chat-settings-panel" id="settingsPanel" hidden>
+    <div class="chat-settings-panel chat-settings-popover" id="settingsPanel" role="dialog" aria-modal="false" aria-labelledby="settingsPanelTitle" hidden>
+      <div class="chat-settings-header">
+        <span id="settingsPanelTitle" class="chat-settings-title" data-i18n="content__btnSettings">Settings</span>
+        <button id="settingsCloseBtn" class="chat-settings-close" type="button" data-i18n-title="content__btnClose" title="Close" aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+      </div>
       <div class="chat-settings-grid">
         <label class="chat-settings-field">
           <span class="chat-settings-label" data-i18n="chat__settingsModel">Model</span>
@@ -45,25 +54,29 @@
             <span class="chat-settings-value" data-i18n="chat__streamingToggle">Streaming</span>
           </span>
         </label>
+        <label class="chat-settings-field">
+          <span class="chat-settings-label" data-i18n="chat__settingsContextWindow">Context Window</span>
+          <input id="maxContextMessagesInput" type="number" min="0" step="1" data-i18n-placeholder="chat__maxContextMessagesPlaceholder" placeholder="Empty for full history">
+        </label>
       </div>
     </div>
 
-    <div class="chat-status-bar">
-      <div id="statusText" class="chat-status-text" data-i18n="chat__statusIdle">Idle</div>
-      <button id="stopBtn" class="stop-btn" type="button" data-i18n="chat__btnStop">Stop</button>
-    </div>
-
     <div class="input-container">
-      <textarea id="messageInput" rows="1"></textarea>
-      <button id="sendBtn" class="send-btn" data-i18n-title="chat__btnSend" title="Send">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <div class="composer-field">
+        <div id="composerStatus" class="composer-status" role="status" aria-live="polite" hidden>
+          <span class="composer-status-dot" aria-hidden="true"></span>
+          <span id="composerStatusText" class="composer-status-text"></span>
+        </div>
+        <textarea id="messageInput" rows="1" data-i18n-placeholder="chat__inputPlaceholder" placeholder="Ask anything"></textarea>
+      </div>
+      <button id="sendBtn" class="send-btn" data-i18n-title="chat__btnSend" title="Send" aria-label="Send">
+        <svg class="send-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
         </svg>
+        <svg class="stop-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M7 7h10v10H7z"/>
+        </svg>
       </button>
-    </div>
-
-    <div class="loading-indicator" id="loadingIndicator" style="display: none;">
-      <div class="loading-text" data-i18n="chat__thinking">AI is thinking...</div>
     </div>
   </div>
 

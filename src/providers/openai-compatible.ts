@@ -655,7 +655,7 @@ export async function streamProviderResponse(input: {
     onEvent: (event) => input.onEvent({ ...event, requestId: input.requestId })
   };
 
-  const shouldStream = input.model.supportsStreaming && input.streamingEnabled !== false;
+  const shouldStream = input.streamingEnabled !== false;
 
   if (input.provider.transport === 'responses') {
     if (shouldStream) {

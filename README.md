@@ -22,8 +22,9 @@ AI Multi-Window Chat lets you open multiple draggable chat windows on any page, 
 - **Floating Windows** - Drag, resize, minimize, and close
 - **Selection** - Highlight text to launch a new chat with the selection
 - **History Management** - Auto-save, reopen, delete, and export chats
-- **Multiple Export Formats** - Export chats as Markdown (.md) or plain text (.txt)
+- **Multiple Export Formats** - Export chats as Markdown (.md) or JSON (.json)
 - **Prompt Management** - Create, edit, delete, import, and export custom system prompts
+- **Flexible Model Settings** - Configure transport, reasoning format, streaming, and context window per model
 - **OpenAI Compatible** - Works with any OpenAI-compatible API endpoint
 
 ## Install
@@ -55,20 +56,24 @@ Install directly from the Chrome Web Store:
 ## Configure API
 
 1. Click the extension icon to open the settings popup
-2. Fill in:
+2. In the **Config** tab, fill in:
    - **API URL**: e.g., `https://api.openai.com/v1`
    - **API Key**: your API key
    - **Model Name**: e.g., `gpt-5`
+   - **Transport**: `chat_completions` or `responses`
+   - **Reasoning Format**: choose the format your provider returns
+   - **Streaming / Max Context Messages**: set per-model response behavior
 3. Click "Save Config"
 
 ## Usage
 
 - Select text on a page, then click **AI Chat** in the floating toolbar.
 - Press `Alt+N` to open a new chat window with the current selection.
+- Press `Alt+M` to close the most recently opened chat window.
 - Click the window title to rename it.
-- Open the **History** tab to reopen, export, or delete chats.
+- Open the **History** tab to reopen, export, or delete chats, and export history as Markdown or JSON.
 - Use the **Prompts** tab to manage custom system prompts for your conversations.
-- Use the **Config** tab to manage multiple API configurations and quickly switch between them.
+- Use the **Config** tab to manage multiple API configurations, reasoning format, streaming, and context window limits.
 
 ## License
 
