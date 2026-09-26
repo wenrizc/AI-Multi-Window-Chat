@@ -136,11 +136,12 @@ export function addUsage(base: UsageMetrics | null, next: UsageMetrics | null): 
   });
 }
 
-export function getModel(provider: ProviderConfig, modelId?: string | null): ModelConfig {
+export function getModel(provider: ProviderConfig, modelId?: string | null): ModelConfig | null {
   const targetId = modelId || provider.defaultModel;
   return (
     provider.modelCatalog.find((item) => item.modelId === targetId) ??
-    provider.modelCatalog[0]
+    provider.modelCatalog[0] ??
+    null
   );
 }
 

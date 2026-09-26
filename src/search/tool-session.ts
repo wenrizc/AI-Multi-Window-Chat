@@ -102,7 +102,7 @@ function formatToolOutput(input: {
       lines.push(`Summary: ${source.snippet}`);
     }
   });
-  if (input.searchMeta?.credits !== null) {
+  if (typeof input.searchMeta?.credits === 'number') {
     lines.push('');
     lines.push(`Credits: ${input.searchMeta?.credits ?? 0}`);
   }
@@ -192,8 +192,8 @@ async function executeToolCall(input: {
 
   input.aggregateQueries.push(query);
   input.aggregateSources.push(...searchResult.sources);
-  if (searchResult.searchMeta?.credits !== null) {
-    input.aggregateCredits.total += searchResult.searchMeta?.credits ?? 0;
+  if (typeof searchResult.searchMeta?.credits === 'number') {
+    input.aggregateCredits.total += searchResult.searchMeta.credits;
     input.aggregateCredits.hasValue = true;
   }
 
@@ -247,6 +247,9 @@ export async function runSearchToolSession(input: {
   onEvent: (event: StreamEvent) => void;
 }): Promise<SearchToolSessionResult> {
   const model = getModel(input.provider, input.modelId);
+  if (!model) {
+    throw new Error(i18nMessage('chat__errorModelUnavailable'));
+  }
   const searchTool = createSearchToolDefinition();
   const maxRounds = clampSearchRounds(input.searchSettings.maxRounds);
   const preserveReasoningContent = model.reasoningFormat === 'reasoning_content';
@@ -262,10 +265,11 @@ export async function runSearchToolSession(input: {
   if (input.provider.transport === 'responses') {
     let previousResponseId: string | null = null;
     let pendingToolOutputs: ToolResultMessage[] = [];
-    let toolsEnabled = true;
     let roundsUsed = 0;
 
     while (true) {
+      const canUseTools = roundsUsed < maxRounds;
+
       emit(input.requestId, input.onEvent, {
         type: 'statusUpdate',
         status: roundsUsed === 0 ? 'deciding_search' : 'generating',
@@ -280,15 +284,15 @@ export async function runSearchToolSession(input: {
         toolOutputs: previousResponseId ? pendingToolOutputs : undefined,
         generationParams: input.generationParams,
         signal: input.signal,
-        tools: toolsEnabled ? [searchTool] : undefined,
-        toolChoice: toolsEnabled ? 'auto' : undefined
+        tools: canUseTools ? [searchTool] : undefined,
+        toolChoice: canUseTools ? 'auto' : undefined
       });
 
       usage = addUsage(usage, turn.usage);
       content = turn.content;
       reasoningSummary = turn.reasoningSummary;
 
-      if (turn.toolCalls.length === 0) {
+      if (turn.toolCalls.length === 0 || !canUseTools) {
         return {
           content,
           reasoningSummary,
@@ -326,17 +330,15 @@ export async function runSearchToolSession(input: {
 
       previousResponseId = turn.responseId;
       roundsUsed += 1;
-      if (roundsUsed >= maxRounds) {
-        toolsEnabled = false;
-      }
     }
   }
 
   let messages = [...input.messages];
-  let toolsEnabled = true;
   let roundsUsed = 0;
 
   while (true) {
+    const canUseTools = roundsUsed < maxRounds;
+
     emit(input.requestId, input.onEvent, {
       type: 'statusUpdate',
       status: roundsUsed === 0 ? 'deciding_search' : 'generating',
@@ -349,15 +351,15 @@ export async function runSearchToolSession(input: {
       messages,
       generationParams: input.generationParams,
       signal: input.signal,
-      tools: toolsEnabled ? [searchTool] : undefined,
-      toolChoice: toolsEnabled ? 'auto' : undefined
+      tools: canUseTools ? [searchTool] : undefined,
+      toolChoice: canUseTools ? 'auto' : undefined
     });
 
     usage = addUsage(usage, turn.usage);
     content = turn.content;
     reasoningSummary = turn.reasoningSummary;
 
-    if (turn.toolCalls.length === 0) {
+    if (turn.toolCalls.length === 0 || !canUseTools) {
       return {
         content,
         reasoningSummary,
@@ -405,8 +407,5 @@ export async function runSearchToolSession(input: {
     ];
 
     roundsUsed += 1;
-    if (roundsUsed >= maxRounds) {
-      toolsEnabled = false;
-    }
   }
 }

@@ -43,6 +43,10 @@ function normalizeFixedDefaults(store: RootStore): { store: RootStore; changed: 
   }
 
   for (const provider of normalized.providers) {
+    if (!Array.isArray(provider.modelCatalog)) {
+      provider.modelCatalog = [];
+      changed = true;
+    }
     for (const model of provider.modelCatalog) {
       if (typeof model.supportsStreaming !== 'boolean') {
         model.supportsStreaming = true;

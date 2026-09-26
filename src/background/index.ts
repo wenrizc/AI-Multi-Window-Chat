@@ -133,6 +133,40 @@ async function persistConversation(input: {
   await upsertChatSession(session);
 }
 
+async function persistUserMessage(request: ChatRequest) {
+  const store = await getStore();
+  const existing = store.chatHistory.find((chat) => chat.chatId === request.chatId);
+  const lastMessage = existing?.messages[existing.messages.length - 1];
+  if (lastMessage?.role === 'user' && lastMessage.content === request.userMessage) {
+    return;
+  }
+
+  const createdAt = existing?.createdAt ?? nowIso();
+  const updatedAt = nowIso();
+  const userMessage = createPersistedMessage({
+    role: 'user',
+    content: request.userMessage,
+    mode: request.mode,
+    providerId: request.providerId,
+    modelId: request.modelId,
+    promptId: request.promptId
+  });
+
+  await upsertChatSession({
+    chatId: request.chatId,
+    title: existing?.title || request.windowTitle || compactText(request.userMessage)?.slice(0, 60) || i18nMessage('common__newChat'),
+    providerId: request.providerId,
+    promptId: request.promptId,
+    streamingOverride: request.streamingOverride,
+    maxContextMessagesOverride: request.maxContextMessagesOverride,
+    mode: request.mode,
+    messages: existing ? [...existing.messages, userMessage] : [userMessage],
+    totalUsage: existing?.totalUsage ?? null,
+    createdAt,
+    updatedAt
+  });
+}
+
 async function renameConversation(chatId: string, title: string) {
   const nextTitle = compactText(title);
   if (!nextTitle) {
@@ -159,6 +193,11 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
   }
 
   const model = getModel(provider, request.modelId);
+  if (!model) {
+    post(port, { type: 'failed', requestId: request.requestId, error: i18nMessage('chat__errorModelUnavailable') });
+    return;
+  }
+
   const controller = new AbortController();
   activeRequests.set(request.requestId, {
     controller,
@@ -290,6 +329,9 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
       }
     });
   } catch (error) {
+    await persistUserMessage(request).catch((persistError) => {
+      console.warn('Failed to persist user message', persistError);
+    });
     if (controller.signal.aborted) {
       post(port, {
         type: 'aborted',
