@@ -99,6 +99,10 @@
     "message": "连接失败：$1",
     "description": "连接失败消息（带占位符）"
   },
+  "popup__statusImportFailed": {
+    "message": "导入失败：$1",
+    "description": "导入失败消息（带占位符）"
+  },
   "popup__statusSetActive": {
     "message": "已设为当前",
     "description": "设为当前成功消息"

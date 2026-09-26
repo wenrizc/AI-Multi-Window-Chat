@@ -392,7 +392,7 @@ class PopupApp {
     this.store.featureSettings.search.enabledByDefault = false;
     this.store.featureSettings.defaultStreaming = false;
     this.store.providers.forEach((provider) => {
-      provider.modelCatalog.forEach((model) => {
+      (provider.modelCatalog ?? []).forEach((model) => {
         if (typeof model.supportsStreaming !== 'boolean') {
           model.supportsStreaming = true;
         }
@@ -438,7 +438,7 @@ class PopupApp {
       this.clearProviderForm();
       return;
     }
-    const model = provider.modelCatalog[0];
+    const model = provider.modelCatalog?.[0];
     elements.profileName.value = provider.name;
     elements.apiUrl.value = provider.baseUrl;
     elements.apiKey.value = provider.apiKey;
@@ -587,23 +587,33 @@ class PopupApp {
   private async testProvider() {
     const provider = this.store.providers.find((item) => item.id === this.selectedProviderId);
     if (!provider) return;
-    const response = await chrome.runtime.sendMessage({
-      type: 'TEST_PROVIDER',
-      provider
-    });
-    if (response?.success) {
-      this.showStatus(elements.status, t('popup__statusTestSuccess'), 'success');
-    } else {
-      this.showStatus(elements.status, t('popup__statusTestFailed', response?.error || t('common__unknownError')), 'error');
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'TEST_PROVIDER',
+        provider
+      });
+      if (response?.success) {
+        this.showStatus(elements.status, t('popup__statusTestSuccess'), 'success');
+      } else {
+        this.showStatus(elements.status, t('popup__statusTestFailed', response?.error || t('common__unknownError')), 'error');
+      }
+    } catch (error) {
+      this.showStatus(elements.status, t('popup__statusTestFailed', getErrorText(error)), 'error');
     }
   }
 
   private async importProviders() {
     const file = elements.importProfilesInput.files?.[0];
     if (!file) return;
-    const text = await file.text();
+    let parsed: ProviderImportPayload;
+    try {
+      parsed = parseImportPayload(await file.text()) as ProviderImportPayload;
+    } catch (error) {
+      elements.importProfilesInput.value = '';
+      this.showStatus(elements.status, t('popup__statusImportFailed', getErrorText(error)), 'error');
+      return;
+    }
     elements.importProfilesInput.value = '';
-    const parsed = parseImportPayload(text) as ProviderImportPayload;
     if (Array.isArray(parsed.providers)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
         const result = mergeProvidersForImport(this.store.providers, parsed.providers ?? []);
@@ -709,7 +719,14 @@ class PopupApp {
   private async importPrompts() {
     const file = elements.importPromptsInput.files?.[0];
     if (!file) return;
-    const parsed = parseImportPayload(await file.text()) as { prompts?: PromptConfig[]; defaultPromptId?: string | null };
+    let parsed: { prompts?: PromptConfig[]; defaultPromptId?: string | null };
+    try {
+      parsed = parseImportPayload(await file.text()) as { prompts?: PromptConfig[]; defaultPromptId?: string | null };
+    } catch (error) {
+      elements.importPromptsInput.value = '';
+      this.showStatus(elements.promptStatus, t('popup__statusImportFailed', getErrorText(error)), 'error');
+      return;
+    }
     elements.importPromptsInput.value = '';
     if (Array.isArray(parsed.prompts)) {
       this.confirm(t('popup__confirmImportReplace'), async () => {
@@ -793,16 +810,25 @@ class PopupApp {
     const action = button.dataset.action;
     const chatId = button.dataset.id || '';
     if (action === 'resume') {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const chat = this.store.chatHistory.find((item) => item.chatId === chatId);
-      if (!tab?.id || !chat) {
+      if (!chat) {
         this.showStatus(elements.historyStatus, t('history__errorOpenFailed') + t('common__unknownError'), 'error');
         return;
       }
-      await chrome.tabs.sendMessage(tab.id, {
-        type: 'OPEN_CHAT_WINDOW',
-        chat
-      });
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) {
+          this.showStatus(elements.historyStatus, t('history__errorOpenFailed') + t('common__unknownError'), 'error');
+          return;
+        }
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'OPEN_CHAT_WINDOW',
+          chat
+        });
+      } catch (error) {
+        this.showStatus(elements.historyStatus, t('history__errorOpenFailed') + getErrorText(error), 'error');
+        return;
+      }
       this.showStatus(elements.historyStatus, t('history__successWindowOpened'), 'success');
       return;
     }
@@ -913,7 +939,8 @@ class PopupApp {
     link.href = url;
     link.download = name;
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
 

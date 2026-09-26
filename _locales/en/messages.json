@@ -99,6 +99,10 @@
     "message": "Connection failed: $1",
     "description": "Connection failed message with placeholder"
   },
+  "popup__statusImportFailed": {
+    "message": "Import failed: $1",
+    "description": "Import failed message with placeholder"
+  },
   "popup__statusSetActive": {
     "message": "Current profile updated",
     "description": "Active profile updated message"
