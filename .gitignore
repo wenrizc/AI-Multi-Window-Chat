@@ -5,3 +5,7 @@ dist/
 release/
 .tmp-tests/
 .idea
+.vitest/
+coverage/
+test-results/
+playwright-report/

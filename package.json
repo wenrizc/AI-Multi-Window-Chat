@@ -29,15 +29,29 @@
     "build": "node build.mjs --release",
     "build:watch": "node build.mjs --watch",
     "build:website": "node scripts/build-website.mjs",
-    "test": "node test/run-tests.mjs"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:browser": "vitest run --project browser",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@copilotkit/aimock": "^1.27.3",
+    "@playwright/test": "^1.58.0",
     "@types/chrome": "^0.1.42",
     "@types/node": "^25.9.0",
-    "esbuild": "^0.20.2",
+    "@vitest/browser": "^5.0.2",
+    "@vitest/browser-playwright": "^5.0.2",
+    "@vitest/coverage-v8": "^5.0.2",
+    "esbuild": "^0.28.2",
+    "fast-check": "^4.10.2",
     "msw": "^2.14.6",
-    "typescript": "^6.0.3"
+    "playwright": "^1.58.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.2"
   },
   "dependencies": {
     "katex": "^0.16.27",
