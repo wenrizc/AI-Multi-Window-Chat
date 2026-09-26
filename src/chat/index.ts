@@ -1,5 +1,3 @@
-import { marked } from 'marked';
-import markedKatex from 'marked-katex-extension';
 import { PORT_NAME } from '../shared/constants';
 import { getStore } from '../shared/storage';
 import type {
@@ -21,8 +19,7 @@ import {
   uid,
   writeTextToClipboard
 } from '../shared/utils';
-
-marked.use(markedKatex({ throwOnError: false }));
+import { renderMarkdown, safeLinkHref } from './markdown';
 
 const COMPOSER_STATUS_AUTO_HIDE_MS = 1000;
 const COPY_BUTTON_RESET_MS = 1200;
@@ -483,7 +480,7 @@ class ChatWindowApp {
 
     const content = document.createElement('div');
     content.className = 'message-content';
-    const rendered = message.role === 'assistant' ? await marked.parse(message.content) : escapeHtml(message.content).replace(/\n/g, '<br>');
+    const rendered = message.role === 'assistant' ? await renderMarkdown(message.content) : escapeHtml(message.content).replace(/\n/g, '<br>');
     content.innerHTML = rendered;
     wrapper.appendChild(content);
 
@@ -498,13 +495,31 @@ class ChatWindowApp {
     if (message.sources.length > 0) {
       const sources = document.createElement('div');
       sources.className = 'message-sources';
-      sources.innerHTML = message.sources
-        .map((source, index) => `<a href="${source.url}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(source.title)}</a>`)
-        .join('');
+      this.renderSources(sources, message.sources);
       wrapper.appendChild(sources);
     }
 
     return wrapper;
+  }
+
+  private renderSources(container: HTMLElement, sources: PersistedMessage['sources']) {
+    container.textContent = '';
+    sources.forEach((source, index) => {
+      const label = `[${index + 1}] ${source.title}`;
+      const href = safeLinkHref(source.url);
+      if (!href) {
+        const span = document.createElement('span');
+        span.textContent = label;
+        container.appendChild(span);
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = href;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.textContent = label;
+      container.appendChild(link);
+    });
   }
 
   private async appendUserMessage(content: string) {
@@ -697,7 +712,7 @@ class ChatWindowApp {
       case 'contentDelta':
         if (this.currentAssistantState) {
           this.currentAssistantText += event.delta;
-          const rendered = await marked.parse(this.currentAssistantText);
+          const rendered = await renderMarkdown(this.currentAssistantText);
           this.currentAssistantState.content.innerHTML = rendered;
           this.scrollToBottom();
         }
@@ -724,9 +739,7 @@ class ChatWindowApp {
       case 'sourceUpdate':
         if (this.currentAssistantState) {
           const sourceWrap = this.currentAssistantState.container.querySelector('.message-sources') as HTMLElement;
-          sourceWrap.innerHTML = event.sources
-            .map((source, index) => `<a href="${source.url}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(source.title)}</a>`)
-            .join('');
+          this.renderSources(sourceWrap, event.sources);
         }
         break;
       case 'usageUpdate':
@@ -763,7 +776,7 @@ class ChatWindowApp {
     searchMeta: PersistedMessage['searchMeta'];
   }) {
     if (this.currentAssistantState) {
-      const rendered = await marked.parse(response.content);
+      const rendered = await renderMarkdown(response.content);
       this.currentAssistantState.content.innerHTML = rendered;
       if (response.reasoningSummary) {
         this.currentReasoningText = response.reasoningSummary;
