@@ -128,6 +128,26 @@ function toResponsesTools(tools: ToolDefinition[] | undefined) {
   }));
 }
 
+function parseSseChunk(chunk: string): { event: string; data: string } | null {
+  const lines = chunk
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let data = '';
+  let event = '';
+  for (const line of lines) {
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim();
+    }
+    if (line.startsWith('data:')) {
+      data += (data ? '\n' : '') + line.slice(5).trim();
+    }
+  }
+
+  return data ? { event, data } : null;
+}
+
 async function* sseIterator(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -139,30 +159,21 @@ async function* sseIterator(stream: ReadableStream<Uint8Array>) {
       break;
     }
     buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split('\n\n');
+    const chunks = buffer.split(/\r?\n\r?\n/);
     buffer = chunks.pop() ?? '';
 
     for (const chunk of chunks) {
-      const lines = chunk
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-      let data = '';
-      let event = '';
-      for (const line of lines) {
-        if (line.startsWith('event:')) {
-          event = line.slice(6).trim();
-        }
-        if (line.startsWith('data:')) {
-          data += line.slice(5).trim();
-        }
-      }
-
-      if (data) {
-        yield { event, data };
+      const parsed = parseSseChunk(chunk);
+      if (parsed) {
+        yield parsed;
       }
     }
+  }
+
+  buffer += decoder.decode();
+  const trailing = parseSseChunk(buffer);
+  if (trailing) {
+    yield trailing;
   }
 }
 
