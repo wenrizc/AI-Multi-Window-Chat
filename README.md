@@ -75,6 +75,24 @@ Install directly from the Chrome Web Store:
 - Use the **Prompts** tab to manage custom system prompts for your conversations.
 - Use the **Config** tab to manage multiple API configurations, reasoning format, streaming, and context window limits.
 
+## Development
+
+### Testing
+
+The extension ships with a full Vitest + Playwright test system:
+
+```bash
+npm run typecheck       # TypeScript project check
+npm run test            # unit + integration + browser component tests
+npm run test:unit       # pure Node unit tests
+npm run test:integration # background / provider / fake-LLM tests
+npm run test:browser    # component tests in real Chromium
+npm run test:coverage   # coverage report (text, html, lcov)
+npm run test:e2e        # loads the built release/ extension in Chromium
+```
+
+See [TESTING.md](TESTING.md) for the architecture, fake LLM setup, and how to add new tests.
+
 ## License
 
 [MIT License](LICENSE)
