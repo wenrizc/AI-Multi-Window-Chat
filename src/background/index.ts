@@ -1,7 +1,8 @@
 import { streamProviderResponse, testProviderConnection } from '../providers/openai-compatible';
 import { runSearchToolSession } from '../search/tool-session';
 import { PORT_NAME } from '../shared/constants';
-import { getStore, updateStore, upsertChatSession } from '../shared/storage';
+import { getChatSession, getConfig, updateChatSession, upsertChatSession } from '../shared/storage';
+import { classifyError, type FailureCode } from '../shared/errors';
 import type {
   ChatRequest,
   ChatRequestMessage,
@@ -69,21 +70,27 @@ async function persistConversation(input: {
   usage: PersistedMessage['tokenUsage'];
   searchMeta: PersistedMessage['searchMeta'];
 }) {
-  const store = await getStore();
-  const existing = store.chatHistory.find((chat) => chat.chatId === input.request.chatId);
+  const existing = await getChatSession(input.request.chatId);
   const createdAt = existing?.createdAt ?? nowIso();
   const updatedAt = nowIso();
+  const previousMessages = existing?.messages ?? [];
 
-  const userMessages = [
-    createPersistedMessage({
-      role: 'user',
-      content: input.request.userMessage,
-      mode: input.request.mode,
-      providerId: input.request.providerId,
-      modelId: input.request.modelId,
-      promptId: input.request.promptId
-    })
-  ];
+  // A retry re-sends the same user message that was already persisted when the
+  // first attempt failed; only append it when the tail does not already match.
+  const lastMessage = previousMessages[previousMessages.length - 1];
+  const alreadyPersistedUser =
+    lastMessage?.role === 'user' && lastMessage.content === input.request.userMessage;
+
+  const userMessages = alreadyPersistedUser
+    ? []
+    : [createPersistedMessage({
+        role: 'user',
+        content: input.request.userMessage,
+        mode: input.request.mode,
+        providerId: input.request.providerId,
+        modelId: input.request.modelId,
+        promptId: input.request.promptId
+      })];
 
   const assistantMessage = createPersistedMessage({
     role: 'assistant',
@@ -99,9 +106,7 @@ async function persistConversation(input: {
     searchMeta: input.searchMeta
   });
 
-  const messages: PersistedMessage[] = existing
-    ? [...existing.messages, ...userMessages, assistantMessage]
-    : [...userMessages, assistantMessage];
+  const messages: PersistedMessage[] = [...previousMessages, ...userMessages, assistantMessage];
 
   const totalUsage = messages.reduce<PersistedMessage['tokenUsage']>((acc, message) => {
     if (!message.tokenUsage) {
@@ -134,8 +139,7 @@ async function persistConversation(input: {
 }
 
 async function persistUserMessage(request: ChatRequest) {
-  const store = await getStore();
-  const existing = store.chatHistory.find((chat) => chat.chatId === request.chatId);
+  const existing = await getChatSession(request.chatId);
   const lastMessage = existing?.messages[existing.messages.length - 1];
   if (lastMessage?.role === 'user' && lastMessage.content === request.userMessage) {
     return;
@@ -173,28 +177,47 @@ async function renameConversation(chatId: string, title: string) {
     return;
   }
 
-  await updateStore((store) => {
-    const session = store.chatHistory.find((item) => item.chatId === chatId);
-    if (!session) {
-      return store;
-    }
+  await updateChatSession(chatId, (session) => {
     session.title = nextTitle;
     session.updatedAt = nowIso();
-    return store;
+    return session;
+  });
+}
+
+function postFailure(
+  port: chrome.runtime.Port,
+  requestId: string,
+  failure: { code: FailureCode; error: string; retryable: boolean; status?: number | null }
+) {
+  post(port, {
+    type: 'failed',
+    requestId,
+    error: failure.error,
+    code: failure.code,
+    retryable: failure.retryable,
+    status: failure.status ?? null
   });
 }
 
 async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest) {
-  const store = await getStore();
-  const provider = store.providers.find((item) => item.id === request.providerId);
+  const config = await getConfig();
+  const provider = config.providers.find((item) => item.id === request.providerId);
   if (!provider) {
-    post(port, { type: 'failed', requestId: request.requestId, error: i18nMessage('chat__statusProviderNotFound') });
+    postFailure(port, request.requestId, {
+      code: 'provider_not_found',
+      error: i18nMessage('chat__statusProviderNotFound'),
+      retryable: false
+    });
     return;
   }
 
   const model = getModel(provider, request.modelId);
   if (!model) {
-    post(port, { type: 'failed', requestId: request.requestId, error: i18nMessage('chat__errorModelUnavailable') });
+    postFailure(port, request.requestId, {
+      code: 'model_unavailable',
+      error: i18nMessage('chat__errorModelUnavailable'),
+      retryable: false
+    });
     return;
   }
 
@@ -226,7 +249,7 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
         modelId: request.modelId,
         messages,
         requestId: request.requestId,
-        searchSettings: store.featureSettings.search,
+        searchSettings: config.featureSettings.search,
         generationParams: request.generationParams,
         signal: controller.signal,
         onEvent: (event) => {
@@ -338,12 +361,8 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
         requestId: request.requestId
       });
     } else {
-      const message = error instanceof Error ? error.message : i18nMessage('common__unknownError');
-      post(port, {
-        type: 'failed',
-        requestId: request.requestId,
-        error: message
-      });
+      const failure = classifyError(error);
+      postFailure(port, request.requestId, failure);
     }
   } finally {
     activeRequests.delete(request.requestId);
@@ -357,11 +376,7 @@ function handlePortMessage(port: chrome.runtime.Port, rawMessage: unknown) {
   const message = rawMessage as { type?: string; payload?: unknown; requestId?: string };
   if (message.type === 'start_chat' && message.payload) {
     handleChatRequest(port, message.payload as ChatRequest).catch((error) => {
-      post(port, {
-        type: 'failed',
-        requestId: (message.payload as ChatRequest).requestId,
-        error: error instanceof Error ? error.message : i18nMessage('common__unknownError')
-      });
+      postFailure(port, (message.payload as ChatRequest).requestId, classifyError(error));
     });
     return;
   }

@@ -1,22 +1,51 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { createEmptyStore, PORT_NAME, STORAGE_KEY } from '../../src/shared/constants';
-import type { ChatSession, RootStore, StreamEvent } from '../../src/shared/types';
+import {
+  CHAT_INDEX_KEY,
+  CHAT_SESSION_PREFIX,
+  LEGACY_STORAGE_KEY,
+  META_KEY,
+  PORT_NAME,
+  createEmptyConfig,
+  createEmptyStore
+} from '../../src/shared/constants';
+import type {
+  ChatIndexEntry,
+  ChatSession,
+  RootStore,
+  StorageConfig,
+  StreamEvent
+} from '../../src/shared/types';
+import { chatSessionKey } from '../../src/shared/storage';
 import { getChromeState, type PortMock } from '../helpers/chrome-mock';
 import { createChatRequest, createChatSession, createProvider, TEST_BASE_URL } from '../helpers/factories';
 
 const server = setupServer();
 const state = getChromeState();
 
+/**
+ * Seeds the legacy v4 blob so the background worker exercises the real v4 -> v5
+ * migration on first access.
+ */
 function seedStore(overrides: Partial<RootStore> = {}): RootStore {
   const store: RootStore = { ...createEmptyStore(), ...overrides };
-  state.seedStorage({ [STORAGE_KEY]: store });
+  state.seedStorage({ [LEGACY_STORAGE_KEY]: store });
   return store;
 }
 
+/** Reads the v5 layout synchronously for assertions. */
 function currentStore(): RootStore {
-  return state.storage[STORAGE_KEY] as RootStore;
+  const config = (state.storage[META_KEY] as StorageConfig | undefined) ?? createEmptyConfig();
+  const index = (state.storage[CHAT_INDEX_KEY] as ChatIndexEntry[] | undefined) ?? [];
+  const chatHistory: ChatSession[] = [];
+  for (const entry of index) {
+    const session = state.storage[chatSessionKey(entry.chatId)] as ChatSession | undefined;
+    if (session) {
+      chatHistory.push(session);
+    }
+  }
+  return { ...config, chatHistory };
 }
 
 function connect(): PortMock {
@@ -124,6 +153,8 @@ describe('background chat streaming', () => {
     const failed = await waitForEvent(port, (event) => event.type === 'failed');
     if (failed.type === 'failed') {
       expect(failed.error).toBe('Provider not found.');
+      expect(failed.code).toBe('provider_not_found');
+      expect(failed.retryable).toBe(false);
     }
     expect(currentStore().chatHistory).toEqual([]);
   });
@@ -137,6 +168,7 @@ describe('background chat streaming', () => {
     const failed = await waitForEvent(port, (event) => event.type === 'failed');
     if (failed.type === 'failed') {
       expect(failed.error).toBe('Model does not exist or is unavailable.');
+      expect(failed.code).toBe('model_unavailable');
     }
     expect(currentStore().chatHistory).toEqual([]);
   });
@@ -155,6 +187,9 @@ describe('background chat streaming', () => {
     const failed = await waitForEvent(port, (event) => event.type === 'failed');
     if (failed.type === 'failed') {
       expect(failed.error).toMatch(/500/);
+      expect(failed.code).toBe('http_error');
+      expect(failed.retryable).toBe(true);
+      expect(failed.status).toBe(500);
     }
 
     const session = currentStore().chatHistory[0];
