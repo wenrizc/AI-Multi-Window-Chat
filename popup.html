@@ -950,6 +950,62 @@
       align-items: center;
     }
 
+    .storage-usage {
+      margin: 0 0 10px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-muted);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .storage-usage[hidden] {
+      display: none;
+    }
+
+    .storage-usage[data-level="warning"] {
+      color: #b45309;
+      border-color: #fcd34d;
+      background: #fffbeb;
+    }
+
+    .storage-usage[data-level="critical"] {
+      color: #b91c1c;
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+
+    .header-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .header-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .header-row input {
+      width: 100%;
+      min-width: 0;
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 12px;
+      background: var(--surface-card);
+    }
+
+    .header-row .btn-inline {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
     @media (max-width: 560px) {
       .config-grid,
       .field-grid,
@@ -1030,6 +1086,21 @@
               <button id="toggleApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnShowKey">Show</button>
               <button id="copyApiKeyBtn" class="btn btn-secondary btn-inline" data-i18n="popup__btnCopyKey">Copy</button>
             </div>
+          </div>
+
+          <div class="input-group">
+            <label for="authModeSelect" data-i18n="popup__labelAuthMode">Auth Mode</label>
+            <select id="authModeSelect">
+              <option value="bearer" data-i18n="popup__authModeBearer">Bearer (API Key)</option>
+              <option value="custom" data-i18n="popup__authModeCustom">Custom Headers</option>
+              <option value="none" data-i18n="popup__authModeNone">None</option>
+            </select>
+          </div>
+
+          <div class="input-group field-span-2">
+            <label data-i18n="popup__labelCustomHeaders">Custom Headers</label>
+            <div id="headerRows" class="header-rows"></div>
+            <button id="addHeaderBtn" type="button" class="btn btn-secondary btn-small" data-i18n="popup__btnAddHeader">Add Header</button>
           </div>
 
           <div class="input-group">
@@ -1177,6 +1248,8 @@
     <div class="history-toolbar">
       <input type="text" id="historySearchInput" data-i18n-placeholder="history__searchPlaceholder" placeholder="Search history" />
     </div>
+
+    <div id="storageUsage" class="storage-usage" hidden></div>
 
     <div class="history-list" id="historyList">
       <div class="history-empty">

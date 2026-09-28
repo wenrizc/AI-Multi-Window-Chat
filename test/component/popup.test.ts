@@ -1,8 +1,14 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import popupHtml from '../../popup.html?raw';
-import { STORAGE_KEY } from '../../src/shared/constants';
-import type { RootStore } from '../../src/shared/types';
+import {
+  CHAT_INDEX_KEY,
+  LEGACY_STORAGE_KEY,
+  META_KEY,
+  createEmptyConfig
+} from '../../src/shared/constants';
+import { chatSessionKey } from '../../src/shared/storage';
+import type { ChatIndexEntry, ChatSession, RootStore, StorageConfig } from '../../src/shared/types';
 import { getChromeState } from '../helpers/chrome-mock';
 import {
   createChatSession,
@@ -28,7 +34,8 @@ function setValue(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaEl
 async function bootPopup(overrides: Partial<RootStore> = {}): Promise<void> {
   resetDocument();
   mountExtensionHtml(popupHtml);
-  state.seedStorage({ [STORAGE_KEY]: createRootStore(overrides) });
+  // Seed the legacy v4 blob so the popup runs the real migration path.
+  state.seedStorage({ [LEGACY_STORAGE_KEY]: createRootStore(overrides) });
   await bootModule('../../src/popup/index.ts');
   await waitFor(
     () =>
@@ -37,8 +44,18 @@ async function bootPopup(overrides: Partial<RootStore> = {}): Promise<void> {
   );
 }
 
+/** Reads the v5 layout synchronously for assertions. */
 function storedStore(): RootStore {
-  return state.storage[STORAGE_KEY] as RootStore;
+  const config = (state.storage[META_KEY] as StorageConfig | undefined) ?? createEmptyConfig();
+  const index = (state.storage[CHAT_INDEX_KEY] as ChatIndexEntry[] | undefined) ?? [];
+  const chatHistory: ChatSession[] = [];
+  for (const entry of index) {
+    const session = state.storage[chatSessionKey(entry.chatId)] as ChatSession | undefined;
+    if (session) {
+      chatHistory.push(session);
+    }
+  }
+  return { ...config, chatHistory };
 }
 
 beforeAll(async () => {
@@ -218,5 +235,71 @@ describe('popup prompts', () => {
     await waitFor(() => storedStore().prompts[0]?.name === 'Renamed prompt');
 
     expect(storedStore().prompts[0].content).toBe('new content');
+  });
+});
+
+describe('popup custom headers', () => {
+  it('persists custom headers together with the auth mode', async () => {
+    await bootPopup({
+      providers: [createProvider({ id: 'p1', name: 'Alpha' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: 'p1' }
+    });
+    await waitFor(() => document.querySelectorAll('#profileList .profile-item').length === 1);
+
+    setValue(el<HTMLSelectElement>('authModeSelect'), 'custom');
+    await userEvent.click(el<HTMLButtonElement>('addHeaderBtn'));
+
+    const rows = [...document.querySelectorAll<HTMLElement>('#headerRows .header-row')];
+    expect(rows.length).toBe(2);
+
+    setValue(rows[0].querySelector('.header-name') as HTMLInputElement, 'X-Api-Key');
+    setValue(rows[0].querySelector('.header-value') as HTMLInputElement, 'secret');
+
+    await userEvent.click(el<HTMLButtonElement>('saveBtn'));
+    await waitFor(() => storedStore().providers[0]?.authMode === 'custom');
+
+    expect(storedStore().providers[0].headers).toEqual({ 'X-Api-Key': 'secret' });
+  });
+
+  it('rejects an invalid header name and keeps the stored provider', async () => {
+    await bootPopup({
+      providers: [createProvider({ id: 'p1', name: 'Alpha' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: 'p1' }
+    });
+    await waitFor(() => document.querySelectorAll('#profileList .profile-item').length === 1);
+
+    const row = document.querySelector('#headerRows .header-row') as HTMLElement;
+    setValue(row.querySelector('.header-name') as HTMLInputElement, 'Bad Name');
+    setValue(row.querySelector('.header-value') as HTMLInputElement, 'value');
+
+    await userEvent.click(el<HTMLButtonElement>('saveBtn'));
+    await waitFor(() => el('status').textContent?.includes('Invalid header name') === true);
+
+    expect(storedStore().providers[0].name).toBe('Alpha');
+    expect(storedStore().providers[0].headers).toEqual({});
+  });
+});
+
+describe('popup history deletion', () => {
+  it('deletes a single chat through the confirmation dialog', async () => {
+    await bootPopup({
+      providers: [createProvider({ id: 'p1', name: 'Alpha' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: 'p1' },
+      chatHistory: [
+        createChatSession({ chatId: 'c1', title: 'Alpha chat' }),
+        createChatSession({ chatId: 'c2', title: 'Beta chat' })
+      ]
+    });
+    await waitFor(() => document.querySelectorAll('#profileList .profile-item').length === 1);
+
+    await userEvent.click(document.querySelector('.tab[data-tab="history"]') as HTMLElement);
+    const deleteButton = document.querySelector(
+      '#historyList .history-item button[data-action="delete"]'
+    ) as HTMLButtonElement;
+    await userEvent.click(deleteButton);
+    await userEvent.click(el<HTMLButtonElement>('confirmBtn'));
+
+    await waitFor(() => storedStore().chatHistory.length === 1);
+    expect(storedStore().chatHistory[0].chatId).toBe('c2');
   });
 });

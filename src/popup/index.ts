@@ -1,16 +1,26 @@
-import { getStore, saveStore } from '../shared/storage';
+import {
+  clearChatSessions,
+  deleteChatSession,
+  getStorageUsage,
+  getStore,
+  saveConfig
+} from '../shared/storage';
+import { isStorageQuotaError } from '../shared/errors';
 import type {
   FeatureSettings,
   PromptConfig,
   ProviderConfig,
   RootStore,
-  SearchSettings
+  SearchSettings,
+  StorageConfig
 } from '../shared/types';
 import { mergePromptsForImport, mergeProvidersForImport } from '../shared/imports';
 import {
   clampSearchRounds,
   compactText,
   escapeHtml,
+  isValidHeaderName,
+  normalizeCustomHeaders,
   normalizeMaxContextMessages,
   nowIso,
   resolveReasoningFormat,
@@ -83,6 +93,9 @@ const elements = {
   apiUrl: document.getElementById('apiUrl') as HTMLInputElement,
   apiKey: document.getElementById('apiKey') as HTMLInputElement,
   modelName: document.getElementById('modelName') as HTMLInputElement,
+  authModeSelect: document.getElementById('authModeSelect') as HTMLSelectElement,
+  headerRows: document.getElementById('headerRows') as HTMLElement,
+  addHeaderBtn: document.getElementById('addHeaderBtn') as HTMLButtonElement,
   transportSelect: document.getElementById('transportSelect') as HTMLSelectElement,
   reasoningFormatSelect: document.getElementById('reasoningFormatSelect') as HTMLSelectElement,
   supportsStreamingCheckbox: document.getElementById('supportsStreamingCheckbox') as HTMLInputElement,
@@ -105,6 +118,7 @@ const elements = {
   deletePromptBtn: document.getElementById('deletePromptBtn') as HTMLButtonElement,
   historyList: document.getElementById('historyList') as HTMLElement,
   historySearchInput: document.getElementById('historySearchInput') as HTMLInputElement,
+  storageUsage: document.getElementById('storageUsage') as HTMLElement,
   exportAllBtn: document.getElementById('exportAllBtn') as HTMLButtonElement,
   clearAllBtn: document.getElementById('clearAllBtn') as HTMLButtonElement,
   onboardingModal: document.getElementById('onboardingModal') as HTMLElement,
@@ -146,6 +160,7 @@ class PopupApp {
     this.selectedProviderId = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? null;
     this.selectedPromptId = this.store.featureSettings.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
     this.renderAll();
+    await this.refreshStorageUsage();
     this.maybeShowOnboarding();
   }
 
@@ -193,6 +208,28 @@ class PopupApp {
       }
     });
 
+    elements.addHeaderBtn.addEventListener('click', () => this.appendHeaderRow('', ''));
+    elements.headerRows.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('button[data-header-action]') as HTMLButtonElement | null;
+      if (!button) return;
+      const row = button.closest('.header-row');
+      if (!row) return;
+      if (button.dataset.headerAction === 'remove') {
+        row.remove();
+        if (elements.headerRows.children.length === 0) {
+          this.appendHeaderRow('', '');
+        }
+        return;
+      }
+      if (button.dataset.headerAction === 'toggle') {
+        const input = row.querySelector('.header-value') as HTMLInputElement | null;
+        if (!input) return;
+        const reveal = input.type === 'password';
+        input.type = reveal ? 'text' : 'password';
+        button.textContent = reveal ? t('popup__btnHideKey') : t('popup__btnShowKey');
+      }
+    });
+
     [
       elements.tavilyApiKey,
       elements.searchDepthSelect,
@@ -232,8 +269,9 @@ class PopupApp {
       this.openModal(elements.exportModal);
     });
     elements.clearAllBtn.addEventListener('click', () => this.confirm(t('history__confirmDeleteAll'), async () => {
+      await clearChatSessions();
       this.store.chatHistory = [];
-      await this.persist();
+      await this.refreshStorageUsage();
       this.renderHistory();
       this.showStatus(elements.historyStatus, t('history__successCleared'), 'success');
     }));
@@ -352,6 +390,7 @@ class PopupApp {
         temperature: null
       },
       headers: {},
+      authMode: 'bearer',
       modelCatalog: [
         {
           modelId,
@@ -384,14 +423,51 @@ class PopupApp {
 
   private async persist() {
     this.enforceFixedDefaults();
-    await saveStore(this.store);
+    await this.saveMeta();
+    await this.refreshStorageUsage();
     this.renderAll();
+  }
+
+  /** Persists only the small metadata object; chats live under their own keys. */
+  private async saveMeta(): Promise<void> {
+    const { chatHistory: _chatHistory, ...meta } = this.store;
+    try {
+      await saveConfig(meta as StorageConfig);
+    } catch (error) {
+      this.showStatus(
+        elements.status,
+        isStorageQuotaError(error) ? t('popup__statusQuotaExceeded') : getErrorText(error),
+        'error'
+      );
+    }
+  }
+
+  private async refreshStorageUsage() {
+    const usage = await getStorageUsage();
+    const percent = Math.round(usage.ratio * 100);
+    const level = usage.ratio >= 0.9 ? 'critical' : usage.ratio >= 0.8 ? 'warning' : 'normal';
+    const visible = level !== 'normal';
+    elements.storageUsage.hidden = !visible;
+    if (visible) {
+      elements.storageUsage.dataset.level = level;
+      elements.storageUsage.textContent = t('popup__storageUsage', [
+        formatBytes(usage.bytes),
+        String(percent)
+      ]);
+    } else {
+      delete elements.storageUsage.dataset.level;
+      elements.storageUsage.textContent = '';
+    }
   }
 
   private enforceFixedDefaults() {
     this.store.featureSettings.search.enabledByDefault = false;
     this.store.featureSettings.defaultStreaming = false;
     this.store.providers.forEach((provider) => {
+      provider.headers = normalizeCustomHeaders(provider.headers);
+      if (provider.authMode !== 'bearer' && provider.authMode !== 'custom' && provider.authMode !== 'none') {
+        provider.authMode = 'bearer';
+      }
       (provider.modelCatalog ?? []).forEach((model) => {
         if (typeof model.supportsStreaming !== 'boolean') {
           model.supportsStreaming = true;
@@ -443,6 +519,8 @@ class PopupApp {
     elements.apiUrl.value = provider.baseUrl;
     elements.apiKey.value = provider.apiKey;
     elements.modelName.value = model?.modelId ?? provider.defaultModel;
+    elements.authModeSelect.value = provider.authMode ?? 'bearer';
+    this.renderHeaderRows(provider.headers);
     elements.transportSelect.value = provider.transport;
     elements.reasoningFormatSelect.value = model?.reasoningFormat ?? 'none';
     elements.supportsStreamingCheckbox.checked = model?.supportsStreaming ?? true;
@@ -464,6 +542,74 @@ class PopupApp {
     elements.transportSelect.value = 'chat_completions';
     elements.reasoningFormatSelect.value = 'none';
     elements.supportsStreamingCheckbox.checked = true;
+    elements.authModeSelect.value = 'bearer';
+    this.renderHeaderRows({});
+  }
+
+  /** Rebuilds the custom-header editor, always leaving one blank row. */
+  private renderHeaderRows(headers: Record<string, string> | undefined) {
+    elements.headerRows.innerHTML = '';
+    const entries = Object.entries(headers ?? {});
+    if (entries.length === 0) {
+      this.appendHeaderRow('', '');
+      return;
+    }
+    entries.forEach(([name, value]) => this.appendHeaderRow(name, value));
+  }
+
+  private appendHeaderRow(name: string, value: string) {
+    const row = document.createElement('div');
+    row.className = 'header-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'header-name';
+    nameInput.placeholder = t('popup__headerNamePlaceholder');
+    nameInput.setAttribute('aria-label', t('popup__headerNamePlaceholder'));
+    nameInput.value = name;
+
+    const valueInput = document.createElement('input');
+    valueInput.type = 'password';
+    valueInput.className = 'header-value';
+    valueInput.placeholder = t('popup__headerValuePlaceholder');
+    valueInput.setAttribute('aria-label', t('popup__headerValuePlaceholder'));
+    valueInput.value = value;
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn btn-secondary btn-inline';
+    toggle.dataset.headerAction = 'toggle';
+    toggle.textContent = t('popup__btnShowKey');
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-danger btn-inline';
+    remove.dataset.headerAction = 'remove';
+    remove.setAttribute('aria-label', t('popup__btnRemoveHeader'));
+    remove.textContent = '×';
+
+    row.append(nameInput, valueInput, toggle, remove);
+    elements.headerRows.appendChild(row);
+  }
+
+  private collectHeaders(): { headers: Record<string, string>; error: string | null } {
+    const headers: Record<string, string> = {};
+    const rows = Array.from(elements.headerRows.querySelectorAll('.header-row'));
+    for (const row of rows) {
+      const name = (row.querySelector('.header-name') as HTMLInputElement | null)?.value.trim() ?? '';
+      const value = (row.querySelector('.header-value') as HTMLInputElement | null)?.value ?? '';
+      if (!name) {
+        continue;
+      }
+      if (!isValidHeaderName(name)) {
+        return { headers, error: t('popup__statusInvalidHeaderName', name) };
+      }
+      if (name in headers) {
+        return { headers, error: t('popup__statusDuplicateHeaderName', name) };
+      }
+      headers[name] = value;
+    }
+    return { headers, error: null };
   }
 
   private fillSearchForm() {
@@ -485,7 +631,7 @@ class PopupApp {
       maxRounds: clampSearchRounds(toNullableInt(elements.maxRoundsInput.value))
     };
     this.store.featureSettings.defaultStreaming = false;
-    await saveStore(this.store);
+    await this.saveMeta();
     this.showStatus(elements.searchStatus, t('popup__statusSaved'), 'success');
   }
 
@@ -503,6 +649,7 @@ class PopupApp {
         temperature: null
       },
       headers: {},
+      authMode: 'bearer',
       modelCatalog: [
         {
           modelId: '',
@@ -527,6 +674,11 @@ class PopupApp {
     const now = nowIso();
     const providerId = this.selectedProviderId ?? uid('provider');
     const current = this.store.providers.find((item) => item.id === providerId);
+    const { headers, error: headerError } = this.collectHeaders();
+    if (headerError) {
+      this.showStatus(elements.status, headerError, 'error');
+      return;
+    }
     const provider: ProviderConfig = {
       id: providerId,
       name: elements.profileName.value.trim() || t('popup__untitledProvider'),
@@ -537,7 +689,8 @@ class PopupApp {
       defaultGenerationParams: {
         temperature: toNullableNumber(elements.temperatureInput.value)
       },
-      headers: {},
+      headers,
+      authMode: elements.authModeSelect.value as ProviderConfig['authMode'],
       modelCatalog: [
         {
           modelId: elements.modelName.value.trim(),
@@ -841,8 +994,10 @@ class PopupApp {
     if (action === 'delete') {
       const chat = this.store.chatHistory.find((item) => item.chatId === chatId);
       this.confirm(t('history__confirmDeleteItem', chat?.title || chatId), async () => {
+        await deleteChatSession(chatId);
         this.store.chatHistory = this.store.chatHistory.filter((item) => item.chatId !== chatId);
-        await this.persist();
+        await this.refreshStorageUsage();
+        this.renderHistory();
         this.showStatus(elements.historyStatus, t('history__successDeleted'), 'success');
       });
     }
@@ -1018,6 +1173,16 @@ function getErrorText(error: unknown): string {
     return error.message;
   }
   return String(error || t('common__unknownError'));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function formatPayloadMarkdown(title: string, payload: unknown): string {
