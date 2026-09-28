@@ -79,6 +79,71 @@ describe('chat completions parsing', () => {
   });
 });
 
+describe('request headers over the wire', () => {
+  it('applies the auth mode and custom headers to the outgoing request', async () => {
+    let authorization: string | null = null;
+    let tenant: string | null = null;
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, ({ request }) => {
+        authorization = request.headers.get('authorization');
+        tenant = request.headers.get('x-tenant');
+        return HttpResponse.json({ choices: [{ message: { content: 'ok' } }] });
+      })
+    );
+
+    await completeProviderTurn({
+      provider: createProvider({
+        authMode: 'none',
+        apiKey: 'secret',
+        headers: { 'X-Tenant': 'acme' }
+      }),
+      model: createModel(),
+      messages: [{ role: 'user', content: 'hello' }],
+      generationParams: { temperature: null },
+      signal: new AbortController().signal
+    });
+
+    expect(authorization).toBeNull();
+    expect(tenant).toBe('acme');
+  });
+
+  it('classifies retryable HTTP failures with the failure contract', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, () =>
+        HttpResponse.json({ error: 'slow down' }, { status: 429 })
+      )
+    );
+
+    await expect(
+      completeProviderTurn({
+        provider: createProvider(),
+        model: createModel(),
+        messages: [{ role: 'user', content: 'hello' }],
+        generationParams: { temperature: null },
+        signal: new AbortController().signal
+      })
+    ).rejects.toMatchObject({ code: 'http_error', retryable: true, status: 429 });
+  });
+
+  it('classifies auth failures as non-retryable', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, () =>
+        HttpResponse.json({ error: 'denied' }, { status: 401 })
+      )
+    );
+
+    await expect(
+      completeProviderTurn({
+        provider: createProvider(),
+        model: createModel(),
+        messages: [{ role: 'user', content: 'hello' }],
+        generationParams: { temperature: null },
+        signal: new AbortController().signal
+      })
+    ).rejects.toMatchObject({ code: 'auth', retryable: false, status: 401 });
+  });
+});
+
 describe('chat tool-call parsing', () => {
   it('keeps valid tool calls, coerces object arguments, and drops malformed ones', async () => {
     server.use(

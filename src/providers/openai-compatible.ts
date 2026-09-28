@@ -13,7 +13,15 @@ import type {
   UsageMetrics
 } from '../shared/types';
 import { mergeUsagePayload } from '../shared/parsers';
-import { compactText, normalizeBaseUrl } from '../shared/utils';
+import { compactText, isValidHeaderName, normalizeBaseUrl } from '../shared/utils';
+import { ProviderError, httpStatusFailure } from '../shared/errors';
+import {
+  COMPLETE_TIMEOUTS,
+  CONNECT_TIMEOUTS,
+  STREAM_TIMEOUTS,
+  RequestGuard,
+  type TimeoutBudget
+} from '../shared/timeout';
 
 interface StreamCallbacks {
   onEvent: (event: StreamEventPayload) => void;
@@ -21,12 +29,90 @@ interface StreamCallbacks {
   requestId: string;
 }
 
-function createHeaders(provider: ProviderConfig): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${provider.apiKey}`,
-    ...provider.headers
-  };
+/**
+ * Builds the outbound header map from the provider's auth mode plus custom
+ * headers.
+ *
+ * `authMode` only controls the automatic `Authorization` header; custom headers
+ * are always merged last so an advanced user can override `Authorization` or
+ * `Content-Type` for non-standard gateways. Invalid header names are dropped
+ * before they reach `fetch`.
+ */
+export function createHeaders(provider: ProviderConfig): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const authMode = provider.authMode ?? 'bearer';
+  const apiKey = provider.apiKey?.trim();
+
+  if (authMode === 'bearer' && apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  for (const [rawName, rawValue] of Object.entries(provider.headers ?? {})) {
+    const name = rawName.trim();
+    if (!isValidHeaderName(name)) {
+      continue;
+    }
+    headers[name] = String(rawValue);
+  }
+
+  return headers;
+}
+
+/** Wraps a fetch failure into a stable ProviderError contract. */
+function toFetchError(error: unknown, guard: RequestGuard): ProviderError {
+  if (error instanceof ProviderError) {
+    return error;
+  }
+  if (guard.timedOut) {
+    return new ProviderError('timeout', guard.timeoutMessage(), { retryable: true });
+  }
+  if (guard.signal.aborted) {
+    return new ProviderError('aborted', 'Request aborted.', { retryable: false });
+  }
+  const message = error instanceof Error ? error.message : 'Network request failed.';
+  return new ProviderError('network', message, { retryable: true });
+}
+
+async function fetchWithGuard(
+  url: string,
+  init: RequestInit,
+  guard: RequestGuard
+): Promise<Response> {
+  try {
+    const response = await fetch(url, { ...init, signal: guard.signal });
+    guard.markFirstByte();
+    return response;
+  } catch (error) {
+    throw toFetchError(error, guard);
+  }
+}
+
+function parseJsonBody(text: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new ProviderError('parse', 'Provider returned a malformed JSON payload.', { retryable: false });
+  }
+}
+
+function parseSseData(data: string): Record<string, unknown> {
+  try {
+    return JSON.parse(data) as Record<string, unknown>;
+  } catch {
+    throw new ProviderError('parse', 'Provider returned a malformed SSE payload.', { retryable: false });
+  }
+}
+
+function httpError(status: number, detail?: string): ProviderError {
+  const info = httpStatusFailure(status);
+  return new ProviderError(info.code, detail ?? info.error, {
+    retryable: info.retryable,
+    status
+  });
+}
+
+function createStreamGuard(signal: AbortSignal, budget: TimeoutBudget = STREAM_TIMEOUTS): RequestGuard {
+  return new RequestGuard({ budget, userSignal: signal });
 }
 
 function isAssistantToolCallMessage(message: ProviderMessage): message is AssistantToolCallMessage {
@@ -148,7 +234,7 @@ function parseSseChunk(chunk: string): { event: string; data: string } | null {
   return data ? { event, data } : null;
 }
 
-async function* sseIterator(stream: ReadableStream<Uint8Array>) {
+async function* sseIterator(stream: ReadableStream<Uint8Array>, onActivity?: () => void) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -158,6 +244,7 @@ async function* sseIterator(stream: ReadableStream<Uint8Array>) {
     if (done) {
       break;
     }
+    onActivity?.();
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split(/\r?\n\r?\n/);
     buffer = chunks.pop() ?? '';
@@ -426,56 +513,62 @@ async function streamChatCompletions(
   tools?: ToolDefinition[],
   toolChoice?: ProviderToolChoice
 ) {
-  const response = await fetch(`${normalizeBaseUrl(provider.baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers: createHeaders(provider),
-    signal: callbacks.signal,
-    body: JSON.stringify({
-      model: modelId,
-      messages: toChatMessages(messages, includeReasoningContent),
-      stream: true,
-      stream_options: {
-        include_usage: true
-      },
-      temperature: generationParams.temperature ?? undefined,
-      tools: toChatTools(tools),
-      tool_choice: tools?.length ? toolChoice ?? 'auto' : undefined
-    })
-  });
+  const guard = createStreamGuard(callbacks.signal);
+  try {
+    const response = await fetchWithGuard(`${normalizeBaseUrl(provider.baseUrl)}/chat/completions`, {
+      method: 'POST',
+      headers: createHeaders(provider),
+      body: JSON.stringify({
+        model: modelId,
+        messages: toChatMessages(messages, includeReasoningContent),
+        stream: true,
+        stream_options: {
+          include_usage: true
+        },
+        temperature: generationParams.temperature ?? undefined,
+        tools: toChatTools(tools),
+        tool_choice: tools?.length ? toolChoice ?? 'auto' : undefined
+      })
+    }, guard);
 
-  if (!response.ok || !response.body) {
-    throw new Error(`Provider returned ${response.status}`);
+    if (!response.ok || !response.body) {
+      throw httpError(response.status);
+    }
+
+    let usage: UsageMetrics | null = null;
+
+    for await (const entry of sseIterator(response.body, () => guard.touch())) {
+      if (entry.data === '[DONE]') {
+        break;
+      }
+
+      const payload = parseSseData(entry.data);
+      const choice = Array.isArray(payload.choices) ? payload.choices[0] as Record<string, unknown> : null;
+      const delta = choice?.delta && typeof choice.delta === 'object' ? choice.delta as Record<string, unknown> : {};
+
+      const textDelta = extractTextFromContent(delta.content);
+      const reasoningDelta = extractChatReasoning(delta);
+
+      if (textDelta) {
+        emit(callbacks, { type: 'contentDelta', delta: textDelta });
+      }
+      if (reasoningDelta) {
+        emit(callbacks, { type: 'reasoningDelta', delta: reasoningDelta });
+      }
+
+      const nextUsage = mergeUsagePayload(usage, payload.usage as Record<string, unknown> | undefined);
+      if (nextUsage && nextUsage !== usage) {
+        usage = nextUsage;
+        emit(callbacks, { type: 'usageUpdate', usage });
+      }
+    }
+
+    return usage;
+  } catch (error) {
+    throw toFetchError(error, guard);
+  } finally {
+    guard.cleanup();
   }
-
-  let usage: UsageMetrics | null = null;
-
-  for await (const entry of sseIterator(response.body)) {
-    if (entry.data === '[DONE]') {
-      break;
-    }
-
-    const payload = JSON.parse(entry.data) as Record<string, unknown>;
-    const choice = Array.isArray(payload.choices) ? payload.choices[0] as Record<string, unknown> : null;
-    const delta = choice?.delta && typeof choice.delta === 'object' ? choice.delta as Record<string, unknown> : {};
-
-    const textDelta = extractTextFromContent(delta.content);
-    const reasoningDelta = extractChatReasoning(delta);
-
-    if (textDelta) {
-      emit(callbacks, { type: 'contentDelta', delta: textDelta });
-    }
-    if (reasoningDelta) {
-      emit(callbacks, { type: 'reasoningDelta', delta: reasoningDelta });
-    }
-
-    const nextUsage = mergeUsagePayload(usage, payload.usage as Record<string, unknown> | undefined);
-    if (nextUsage && nextUsage !== usage) {
-      usage = nextUsage;
-      emit(callbacks, { type: 'usageUpdate', usage });
-    }
-  }
-
-  return usage;
 }
 
 async function completeChatCompletions(
@@ -521,55 +614,61 @@ async function streamResponses(
   tools?: ToolDefinition[],
   toolChoice?: ProviderToolChoice
 ) {
-  const response = await fetch(`${normalizeBaseUrl(provider.baseUrl)}/responses`, {
-    method: 'POST',
-    headers: createHeaders(provider),
-    signal: callbacks.signal,
-    body: JSON.stringify({
-      model: modelId,
-      input: toResponsesTextInput(messages),
-      stream: true,
-      temperature: generationParams.temperature ?? undefined,
-      tools: toResponsesTools(tools),
-      tool_choice: tools?.length ? toolChoice ?? 'auto' : undefined
-    })
-  });
+  const guard = createStreamGuard(callbacks.signal);
+  try {
+    const response = await fetchWithGuard(`${normalizeBaseUrl(provider.baseUrl)}/responses`, {
+      method: 'POST',
+      headers: createHeaders(provider),
+      body: JSON.stringify({
+        model: modelId,
+        input: toResponsesTextInput(messages),
+        stream: true,
+        temperature: generationParams.temperature ?? undefined,
+        tools: toResponsesTools(tools),
+        tool_choice: tools?.length ? toolChoice ?? 'auto' : undefined
+      })
+    }, guard);
 
-  if (!response.ok || !response.body) {
-    throw new Error(`Provider returned ${response.status}`);
+    if (!response.ok || !response.body) {
+      throw httpError(response.status);
+    }
+
+    let usage: UsageMetrics | null = null;
+
+    for await (const entry of sseIterator(response.body, () => guard.touch())) {
+      const payload = parseSseData(entry.data);
+      const type = String(payload.type ?? entry.event ?? '');
+
+      if (type === 'response.output_text.delta') {
+        const delta = String(payload.delta ?? '');
+        if (delta) {
+          emit(callbacks, { type: 'contentDelta', delta });
+        }
+        continue;
+      }
+
+      if (type === 'response.reasoning_summary_text.delta') {
+        const delta = String(payload.delta ?? '');
+        if (delta) {
+          emit(callbacks, { type: 'reasoningDelta', delta });
+        }
+        continue;
+      }
+
+      if (type === 'response.completed') {
+        usage = mergeUsagePayload(usage, extractResponsesUsage(payload));
+        if (usage) {
+          emit(callbacks, { type: 'usageUpdate', usage });
+        }
+      }
+    }
+
+    return usage;
+  } catch (error) {
+    throw toFetchError(error, guard);
+  } finally {
+    guard.cleanup();
   }
-
-  let usage: UsageMetrics | null = null;
-
-  for await (const entry of sseIterator(response.body)) {
-    const payload = JSON.parse(entry.data) as Record<string, unknown>;
-    const type = String(payload.type ?? entry.event ?? '');
-
-    if (type === 'response.output_text.delta') {
-      const delta = String(payload.delta ?? '');
-      if (delta) {
-        emit(callbacks, { type: 'contentDelta', delta });
-      }
-      continue;
-    }
-
-    if (type === 'response.reasoning_summary_text.delta') {
-      const delta = String(payload.delta ?? '');
-      if (delta) {
-        emit(callbacks, { type: 'reasoningDelta', delta });
-      }
-      continue;
-    }
-
-    if (type === 'response.completed') {
-      usage = mergeUsagePayload(usage, extractResponsesUsage(payload));
-      if (usage) {
-        emit(callbacks, { type: 'usageUpdate', usage });
-      }
-    }
-  }
-
-  return usage;
 }
 
 async function completeResponses(
@@ -614,40 +713,44 @@ async function completeChatTurn(input: {
   tools?: ToolDefinition[];
   toolChoice?: ProviderToolChoice;
 }): Promise<ProviderTurnResult> {
-  const response = await fetch(`${normalizeBaseUrl(input.provider.baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers: createHeaders(input.provider),
-    signal: input.signal,
-    body: JSON.stringify({
-      model: input.modelId,
-      messages: toChatMessages(input.messages, input.includeReasoningContent),
-      stream: false,
-      temperature: input.generationParams.temperature ?? undefined,
-      tools: toChatTools(input.tools),
-      tool_choice: input.tools?.length ? input.toolChoice ?? 'auto' : undefined
-    })
-  });
+  const guard = new RequestGuard({ budget: COMPLETE_TIMEOUTS, userSignal: input.signal });
+  try {
+    const response = await fetchWithGuard(`${normalizeBaseUrl(input.provider.baseUrl)}/chat/completions`, {
+      method: 'POST',
+      headers: createHeaders(input.provider),
+      body: JSON.stringify({
+        model: input.modelId,
+        messages: toChatMessages(input.messages, input.includeReasoningContent),
+        stream: false,
+        temperature: input.generationParams.temperature ?? undefined,
+        tools: toChatTools(input.tools),
+        tool_choice: input.tools?.length ? input.toolChoice ?? 'auto' : undefined
+      })
+    }, guard);
 
-  if (!response.ok) {
-    throw new Error(`Provider returned ${response.status}`);
+    if (!response.ok) {
+      throw httpError(response.status);
+    }
+
+    const payload = parseJsonBody(await response.text());
+    const choice = Array.isArray(payload.choices) ? payload.choices[0] as Record<string, unknown> : null;
+    const message = choice?.message && typeof choice.message === 'object'
+      ? choice.message as Record<string, unknown>
+      : {};
+
+    const reasoningContent = extractChatReasoning(message);
+
+    return applyDsmlToolCallFallback({
+      content: extractTextFromContent(message.content),
+      reasoningSummary: compactText(reasoningContent),
+      reasoningContent: reasoningContent || null,
+      usage: mergeUsagePayload(null, payload.usage as Record<string, unknown> | undefined),
+      toolCalls: extractChatToolCalls(message),
+      responseId: null
+    });
+  } finally {
+    guard.cleanup();
   }
-
-  const payload = await response.json() as Record<string, unknown>;
-  const choice = Array.isArray(payload.choices) ? payload.choices[0] as Record<string, unknown> : null;
-  const message = choice?.message && typeof choice.message === 'object'
-    ? choice.message as Record<string, unknown>
-    : {};
-
-  const reasoningContent = extractChatReasoning(message);
-
-  return applyDsmlToolCallFallback({
-    content: extractTextFromContent(message.content),
-    reasoningSummary: compactText(reasoningContent),
-    reasoningContent: reasoningContent || null,
-    usage: mergeUsagePayload(null, payload.usage as Record<string, unknown> | undefined),
-    toolCalls: extractChatToolCalls(message),
-    responseId: null
-  });
 }
 
 async function completeResponsesTurn(input: {
@@ -679,26 +782,30 @@ async function completeResponsesTurn(input: {
     body.tool_choice = input.toolChoice ?? 'auto';
   }
 
-  const response = await fetch(`${normalizeBaseUrl(input.provider.baseUrl)}/responses`, {
-    method: 'POST',
-    headers: createHeaders(input.provider),
-    signal: input.signal,
-    body: JSON.stringify(body)
-  });
+  const guard = new RequestGuard({ budget: COMPLETE_TIMEOUTS, userSignal: input.signal });
+  try {
+    const response = await fetchWithGuard(`${normalizeBaseUrl(input.provider.baseUrl)}/responses`, {
+      method: 'POST',
+      headers: createHeaders(input.provider),
+      body: JSON.stringify(body)
+    }, guard);
 
-  if (!response.ok) {
-    throw new Error(`Provider returned ${response.status}`);
+    if (!response.ok) {
+      throw httpError(response.status);
+    }
+
+    const payload = parseJsonBody(await response.text());
+    return applyDsmlToolCallFallback({
+      content: extractResponsesText(payload),
+      reasoningSummary: compactText(extractResponsesReasoning(payload)),
+      reasoningContent: null,
+      usage: mergeUsagePayload(null, extractResponsesUsage(payload)),
+      toolCalls: extractResponsesToolCalls(payload),
+      responseId: typeof payload.id === 'string' ? payload.id : null
+    });
+  } finally {
+    guard.cleanup();
   }
-
-  const payload = await response.json() as Record<string, unknown>;
-  return applyDsmlToolCallFallback({
-    content: extractResponsesText(payload),
-    reasoningSummary: compactText(extractResponsesReasoning(payload)),
-    reasoningContent: null,
-    usage: mergeUsagePayload(null, extractResponsesUsage(payload)),
-    toolCalls: extractResponsesToolCalls(payload),
-    responseId: typeof payload.id === 'string' ? payload.id : null
-  });
 }
 
 export async function completeProviderTurn(input: {
@@ -807,13 +914,18 @@ export async function streamProviderResponse(input: {
 }
 
 export async function testProviderConnection(provider: ProviderConfig): Promise<void> {
-  const response = await fetch(`${normalizeBaseUrl(provider.baseUrl)}/models`, {
-    method: 'GET',
-    headers: createHeaders(provider)
-  });
+  const guard = new RequestGuard({ budget: CONNECT_TIMEOUTS });
+  try {
+    const response = await fetchWithGuard(`${normalizeBaseUrl(provider.baseUrl)}/models`, {
+      method: 'GET',
+      headers: createHeaders(provider)
+    }, guard);
 
-  if (!response.ok) {
-    const text = compactText(await response.text()) || response.statusText;
-    throw new Error(text);
+    if (!response.ok) {
+      const text = compactText(await response.text()) || response.statusText;
+      throw httpError(response.status, text);
+    }
+  } finally {
+    guard.cleanup();
   }
 }
