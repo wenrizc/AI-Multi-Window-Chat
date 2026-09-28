@@ -477,6 +477,62 @@
     "message": "Failed to parse the response.",
     "description": "Response parsing failure message"
   },
+  "chat__btnRetry": {
+    "message": "Retry",
+    "description": "Retry a failed request button"
+  },
+  "popup__labelAuthMode": {
+    "message": "Auth Mode",
+    "description": "Authentication mode label"
+  },
+  "popup__authModeBearer": {
+    "message": "Bearer (API Key)",
+    "description": "Bearer auth mode option"
+  },
+  "popup__authModeCustom": {
+    "message": "Custom Headers",
+    "description": "Custom headers auth mode option"
+  },
+  "popup__authModeNone": {
+    "message": "None",
+    "description": "No auth mode option"
+  },
+  "popup__labelCustomHeaders": {
+    "message": "Custom Headers",
+    "description": "Custom headers label"
+  },
+  "popup__btnAddHeader": {
+    "message": "Add Header",
+    "description": "Add a custom header button"
+  },
+  "popup__headerNamePlaceholder": {
+    "message": "Header name",
+    "description": "Custom header name placeholder"
+  },
+  "popup__headerValuePlaceholder": {
+    "message": "Header value",
+    "description": "Custom header value placeholder"
+  },
+  "popup__btnRemoveHeader": {
+    "message": "Remove header",
+    "description": "Remove a custom header button"
+  },
+  "popup__statusInvalidHeaderName": {
+    "message": "Invalid header name: $1",
+    "description": "Invalid custom header name error"
+  },
+  "popup__statusDuplicateHeaderName": {
+    "message": "Duplicate header name: $1",
+    "description": "Duplicate custom header name error"
+  },
+  "popup__statusQuotaExceeded": {
+    "message": "Storage is full. Export a backup and delete older chats.",
+    "description": "Storage quota exceeded error"
+  },
+  "popup__storageUsage": {
+    "message": "Storage: $1 used ($2%)",
+    "description": "Storage usage indicator"
+  },
   "chat__reasoningSummary": {
     "message": "Reasoning Summary",
     "description": "Reasoning summary heading"

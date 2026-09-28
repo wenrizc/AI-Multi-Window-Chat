@@ -477,6 +477,62 @@
     "message": "响应解析失败。",
     "description": "响应解析失败提示"
   },
+  "chat__btnRetry": {
+    "message": "重试",
+    "description": "重试失败请求按钮"
+  },
+  "popup__labelAuthMode": {
+    "message": "认证方式",
+    "description": "认证方式标签"
+  },
+  "popup__authModeBearer": {
+    "message": "Bearer（API Key）",
+    "description": "Bearer 认证选项"
+  },
+  "popup__authModeCustom": {
+    "message": "自定义请求头",
+    "description": "自定义请求头认证选项"
+  },
+  "popup__authModeNone": {
+    "message": "无",
+    "description": "无认证选项"
+  },
+  "popup__labelCustomHeaders": {
+    "message": "自定义请求头",
+    "description": "自定义请求头标签"
+  },
+  "popup__btnAddHeader": {
+    "message": "添加请求头",
+    "description": "添加自定义请求头按钮"
+  },
+  "popup__headerNamePlaceholder": {
+    "message": "请求头名称",
+    "description": "自定义请求头名称占位符"
+  },
+  "popup__headerValuePlaceholder": {
+    "message": "请求头值",
+    "description": "自定义请求头值占位符"
+  },
+  "popup__btnRemoveHeader": {
+    "message": "删除请求头",
+    "description": "删除自定义请求头按钮"
+  },
+  "popup__statusInvalidHeaderName": {
+    "message": "请求头名称无效：$1",
+    "description": "自定义请求头名称无效错误"
+  },
+  "popup__statusDuplicateHeaderName": {
+    "message": "请求头名称重复：$1",
+    "description": "自定义请求头名称重复错误"
+  },
+  "popup__statusQuotaExceeded": {
+    "message": "存储空间已满，请导出备份并删除较早的会话。",
+    "description": "存储超限错误"
+  },
+  "popup__storageUsage": {
+    "message": "存储占用：$1（$2%）",
+    "description": "存储占用提示"
+  },
   "chat__reasoningSummary": {
     "message": "推理摘要",
     "description": "推理摘要标题"
