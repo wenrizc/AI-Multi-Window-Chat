@@ -52,6 +52,13 @@ function lastStartChat(): ChatRequest | null {
   return event?.payload ?? null;
 }
 
+function startChatPayloads(): ChatRequest[] {
+  const port = state.lastPort();
+  return (port?.posted ?? [])
+    .filter((entry) => (entry as { type?: string }).type === 'start_chat')
+    .map((entry) => (entry as { payload: ChatRequest }).payload);
+}
+
 function emit(event: StreamEvent): void {
   (state.lastPort() as PortMock).emit(event);
 }
@@ -108,6 +115,46 @@ describe('chat window streaming', () => {
     );
     expect(el<HTMLButtonElement>('sendBtn').classList.contains('is-loading')).toBe(false);
     expect(document.querySelector('.message-footer-usage')?.textContent).toBeTruthy();
+  });
+
+  it('renders the full reply after a burst of throttled deltas', async () => {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'stream fast');
+    await userEvent.click(el<HTMLButtonElement>('sendBtn'));
+    const payload = await waitFor(() => {
+      const candidate = lastStartChat();
+      return candidate && candidate.userMessage === 'stream fast' ? candidate : null;
+    });
+
+    const chunks = Array.from({ length: 40 }, (_value, index) => `chunk-${index} `);
+    for (const chunk of chunks) {
+      emit({ type: 'contentDelta', requestId: payload.requestId, delta: chunk });
+    }
+
+    emit({
+      type: 'completed',
+      requestId: payload.requestId,
+      response: {
+        content: chunks.join(''),
+        reasoningSummary: null,
+        toolCalls: [],
+        usage: null,
+        sources: [],
+        searchMeta: null
+      }
+    });
+
+    await waitFor(() =>
+      document.querySelector('.message-assistant .message-content')?.textContent?.includes('chunk-39')
+    );
+    expect(document.querySelector('.message-assistant .message-content')?.textContent).toContain('chunk-0');
   });
 });
 
@@ -212,11 +259,55 @@ describe('chat window failure handling', () => {
       return candidate && candidate.userMessage === 'fail please' ? candidate : null;
     });
 
-    emit({ type: 'failed', requestId: payload.requestId, error: 'Provider returned 401' });
+    emit({ type: 'failed', requestId: payload.requestId, error: 'Provider returned 401', code: 'auth', retryable: false, status: 401 });
 
     await waitFor(() => el('composerStatusText').textContent === 'API key is invalid or authentication failed.');
     expect(el('composerStatus').dataset.variant).toBe('error');
+    expect(el<HTMLButtonElement>('composerRetryBtn').hidden).toBe(true);
     expect(document.querySelector('.message-assistant')).toBeNull();
+  });
+
+  it('offers a retry for retryable failures and resends with a fresh request id', async () => {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'retry me');
+    await userEvent.click(el<HTMLButtonElement>('sendBtn'));
+    const first = await waitFor(() => {
+      const candidate = lastStartChat();
+      return candidate && candidate.userMessage === 'retry me' ? candidate : null;
+    });
+
+    emit({
+      type: 'failed',
+      requestId: first.requestId,
+      error: 'Provider returned 500',
+      code: 'http_error',
+      retryable: true,
+      status: 500
+    });
+
+    await waitFor(() => el('composerStatusText').textContent === 'Service returned status 500.');
+    const retryButton = el<HTMLButtonElement>('composerRetryBtn');
+    expect(retryButton.hidden).toBe(false);
+    expect(document.querySelectorAll('.message-user').length).toBe(1);
+
+    await userEvent.click(retryButton);
+
+    const second = await waitFor(() => {
+      const payloads = startChatPayloads();
+      return payloads.length === 2 ? payloads[1] : null;
+    });
+    expect(second.requestId).not.toBe(first.requestId);
+    expect(second.userMessage).toBe('retry me');
+    expect(retryButton.hidden).toBe(true);
+    // Retrying must not duplicate the user bubble.
+    expect(document.querySelectorAll('.message-user').length).toBe(1);
   });
 
   it('clears the placeholder when the request is aborted', async () => {

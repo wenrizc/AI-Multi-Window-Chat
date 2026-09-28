@@ -618,6 +618,28 @@ body {
   white-space: nowrap;
 }
 
+.composer-status-retry {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.composer-status-retry[hidden] {
+  display: none;
+}
+
+.composer-status-retry:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
 .composer-status[data-variant="busy"] {
   color: var(--accent);
 }

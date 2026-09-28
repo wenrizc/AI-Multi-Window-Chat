@@ -1,5 +1,6 @@
 import { PORT_NAME } from '../shared/constants';
-import { getStore } from '../shared/storage';
+import { getConfig } from '../shared/storage';
+import type { FailureCode } from '../shared/errors';
 import type {
   ChatRequest,
   ChatSession,
@@ -23,6 +24,14 @@ import { renderMarkdown, safeLinkHref } from './markdown';
 
 const COMPOSER_STATUS_AUTO_HIDE_MS = 1000;
 const COPY_BUTTON_RESET_MS = 1200;
+/**
+ * Streaming markdown is re-rendered on a trailing timer instead of once per
+ * delta, so a fast token stream cannot trigger hundreds of full parses.
+ */
+const ASSISTANT_RENDER_INTERVAL_MS = 60;
+/** Maximum number of manual retries offered for a retryable failure. */
+const MAX_RETRY_ATTEMPTS = 3;
+const SCROLL_PIN_THRESHOLD_PX = 48;
 const COPY_ICON_SVG = `
   <svg class="message-copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <rect x="9" y="9" width="10" height="10" rx="2"></rect>
@@ -74,10 +83,23 @@ class ChatWindowApp {
   private composerStatusKey: string | null = null;
   private copyButtonTimers = new WeakMap<HTMLButtonElement, number>();
 
+  /** Throttled streaming render state. */
+  private renderTimer: number | null = null;
+  private renderInFlight = false;
+  private assistantContentVersion = 0;
+  /** Set when the final response render is authoritative; blocks late flushes. */
+  private renderSealed = false;
+
+  /** Replayable snapshot for the manual retry action. */
+  private retryTemplate: Omit<ChatRequest, 'requestId'> | null = null;
+  private retryAttempts = 0;
+  private userPinnedToBottom = true;
+
   private elements = {
     messagesContainer: document.getElementById('messagesContainer') as HTMLElement,
     composerStatus: document.getElementById('composerStatus') as HTMLElement,
     composerStatusText: document.getElementById('composerStatusText') as HTMLElement,
+    composerRetryBtn: document.getElementById('composerRetryBtn') as HTMLButtonElement,
     messageInput: document.getElementById('messageInput') as HTMLTextAreaElement,
     sendBtn: document.getElementById('sendBtn') as HTMLButtonElement,
     promptSelect: document.getElementById('promptSelect') as HTMLSelectElement,
@@ -126,19 +148,19 @@ class ChatWindowApp {
   }
 
   private async reloadStore() {
-    const store = await getStore();
-    this.providers = store.providers;
-    this.prompts = store.prompts;
-    this.featureSettings = store.featureSettings;
+    const config = await getConfig();
+    this.providers = config.providers;
+    this.prompts = config.prompts;
+    this.featureSettings = config.featureSettings;
 
     if (!this.profileId) {
-      this.profileId = store.featureSettings.defaultProviderId;
+      this.profileId = config.featureSettings.defaultProviderId;
     }
     if (!this.promptId) {
-      this.promptId = store.featureSettings.defaultPromptId;
+      this.promptId = config.featureSettings.defaultPromptId;
     }
 
-    this.elements.searchToggle.checked = store.featureSettings.search.enabledByDefault;
+    this.elements.searchToggle.checked = config.featureSettings.search.enabledByDefault;
   }
 
   private applyInitPayload(payload: {
@@ -179,7 +201,12 @@ class ChatWindowApp {
 
   private bindEvents() {
     this.elements.sendBtn.addEventListener('click', () => this.handlePrimaryAction());
+    this.elements.composerRetryBtn.addEventListener('click', () => this.retryLastRequest());
     this.elements.settingsCloseBtn.addEventListener('click', () => this.setSettingsPanelOpen(false));
+    this.elements.messagesContainer.addEventListener('scroll', () => {
+      const el = this.elements.messagesContainer;
+      this.userPinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_PIN_THRESHOLD_PX;
+    });
     this.elements.messageInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
@@ -541,6 +568,7 @@ class ChatWindowApp {
     this.messages.push(message);
     this.removeWelcomeMessage();
     this.elements.messagesContainer.appendChild(await this.createMessageNode(message));
+    this.userPinnedToBottom = true;
     this.scrollToBottom();
   }
 
@@ -569,6 +597,7 @@ class ChatWindowApp {
     `;
     this.removeWelcomeMessage();
     this.elements.messagesContainer.appendChild(wrapper);
+    this.userPinnedToBottom = true;
     this.scrollToBottom();
 
     const reasoningWrap = wrapper.querySelector('.message-reasoning') as HTMLElement;
@@ -599,6 +628,9 @@ class ChatWindowApp {
     }
 
     this.clearComposerStatus();
+    this.hideRetryButton();
+    this.retryTemplate = null;
+    this.retryAttempts = 0;
 
     if (!this.profileId) {
       this.setLocalizedComposerStatus('chat__statusCreateProviderFirst', 'warning');
@@ -638,6 +670,9 @@ class ChatWindowApp {
     this.currentAssistantText = '';
     this.currentReasoningText = '';
     this.currentToolCalls = [];
+    this.assistantContentVersion = 0;
+    this.renderSealed = false;
+    this.cancelScheduledRender();
     this.showLoading(true);
     this.setLocalizedComposerStatus('chat__statusGenerating', 'busy');
 
@@ -681,6 +716,22 @@ class ChatWindowApp {
         type: 'start_chat',
         payload: request
       });
+
+      this.retryTemplate = {
+        chatId: request.chatId,
+        windowTitle: request.windowTitle,
+        providerId: request.providerId,
+        modelId: request.modelId,
+        promptId: request.promptId,
+        streamingOverride: request.streamingOverride,
+        maxContextMessages: request.maxContextMessages,
+        maxContextMessagesOverride: request.maxContextMessagesOverride,
+        userMessage: request.userMessage,
+        mode: request.mode,
+        messages: request.messages,
+        generationParams: request.generationParams,
+        streamingEnabled: request.streamingEnabled
+      };
     } catch (error) {
       console.error(error);
       this.removeCurrentAssistantPlaceholder();
@@ -712,9 +763,8 @@ class ChatWindowApp {
       case 'contentDelta':
         if (this.currentAssistantState) {
           this.currentAssistantText += event.delta;
-          const rendered = await renderMarkdown(this.currentAssistantText);
-          this.currentAssistantState.content.innerHTML = rendered;
-          this.scrollToBottom();
+          this.assistantContentVersion += 1;
+          this.scheduleAssistantRender();
         }
         break;
       case 'reasoningDelta':
@@ -749,19 +799,27 @@ class ChatWindowApp {
         break;
       case 'completed':
         await this.finishStream(event.response);
+        this.retryAttempts = 0;
+        this.hideRetryButton();
         this.setLocalizedComposerStatus('chat__statusCompleted', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
       case 'aborted':
+        this.cancelScheduledRender();
         this.removeCurrentAssistantPlaceholder();
         this.resetLoadingState();
+        this.hideRetryButton();
         this.setLocalizedComposerStatus('chat__statusStopped', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
-      case 'failed':
+      case 'failed': {
         console.error(event.error);
+        this.cancelScheduledRender();
         this.removeCurrentAssistantPlaceholder();
         this.resetLoadingState();
-        this.setComposerStatus(this.formatChatFailure(event.error), 'error');
+        this.setComposerStatus(this.formatChatFailure(event.error, event.code, event.status), 'error');
+        const canRetry = Boolean(event.retryable && this.retryTemplate && this.retryAttempts < MAX_RETRY_ATTEMPTS);
+        this.setRetryButtonVisible(canRetry);
         break;
+      }
       default:
         break;
     }
@@ -775,6 +833,8 @@ class ChatWindowApp {
     sources: PersistedMessage['sources'];
     searchMeta: PersistedMessage['searchMeta'];
   }) {
+    this.cancelScheduledRender();
+    this.renderSealed = true;
     if (this.currentAssistantState) {
       const rendered = await renderMarkdown(response.content);
       this.currentAssistantState.content.innerHTML = rendered;
@@ -818,6 +878,8 @@ class ChatWindowApp {
   }
 
   private resetLoadingState() {
+    this.cancelScheduledRender();
+    this.renderSealed = false;
     this.isLoading = false;
     this.currentRequestId = null;
     this.currentAssistantState = null;
@@ -826,6 +888,99 @@ class ChatWindowApp {
     this.currentToolCalls = [];
     this.currentModelId = null;
     this.showLoading(false);
+  }
+
+  /**
+   * Schedules a trailing markdown render. Only one timer is ever pending; if a
+   * render is already in flight the next flush is chained after it finishes.
+   */
+  private scheduleAssistantRender() {
+    if (!this.currentAssistantState || this.renderTimer !== null || this.renderInFlight) {
+      return;
+    }
+    this.renderTimer = window.setTimeout(() => {
+      this.renderTimer = null;
+      void this.flushAssistantRender();
+    }, ASSISTANT_RENDER_INTERVAL_MS);
+  }
+
+  private async flushAssistantRender() {
+    const state = this.currentAssistantState;
+    if (!state || this.renderInFlight) {
+      return;
+    }
+
+    this.renderInFlight = true;
+    const requestId = this.currentRequestId;
+    const version = this.assistantContentVersion;
+    const text = this.currentAssistantText;
+
+    try {
+      const rendered = await renderMarkdown(text);
+      // The request may have finished/aborted or a new one started while the
+      // parse was in flight; never write a stale snapshot into the DOM.
+      if (!this.renderSealed && requestId === this.currentRequestId && state === this.currentAssistantState) {
+        state.content.innerHTML = rendered;
+        if (this.userPinnedToBottom) {
+          this.scrollToBottom();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to render streamed markdown', error);
+    } finally {
+      this.renderInFlight = false;
+    }
+
+    if (version !== this.assistantContentVersion) {
+      this.scheduleAssistantRender();
+    }
+  }
+
+  private cancelScheduledRender() {
+    if (this.renderTimer !== null) {
+      window.clearTimeout(this.renderTimer);
+      this.renderTimer = null;
+    }
+  }
+
+  private setRetryButtonVisible(visible: boolean) {
+    this.elements.composerRetryBtn.hidden = !visible;
+  }
+
+  private hideRetryButton() {
+    this.setRetryButtonVisible(false);
+  }
+
+  /** Re-sends the last request without re-appending the user message. */
+  private retryLastRequest() {
+    const template = this.retryTemplate;
+    if (!template || this.isLoading || this.retryAttempts >= MAX_RETRY_ATTEMPTS) {
+      return;
+    }
+
+    this.retryAttempts += 1;
+    this.hideRetryButton();
+    this.clearComposerStatus();
+
+    this.isLoading = true;
+    this.currentRequestId = uid('req');
+    this.currentAssistantState = this.createAssistantPlaceholder();
+    this.currentAssistantText = '';
+    this.currentReasoningText = '';
+    this.currentToolCalls = [];
+    this.assistantContentVersion = 0;
+    this.renderSealed = false;
+    this.cancelScheduledRender();
+    this.showLoading(true);
+    this.setLocalizedComposerStatus('chat__statusGenerating', 'busy');
+
+    this.port.postMessage({
+      type: 'start_chat',
+      payload: {
+        ...template,
+        requestId: this.currentRequestId
+      }
+    });
   }
 
   private updateCurrentReasoningVisibility() {
@@ -897,9 +1052,31 @@ class ChatWindowApp {
     this.elements.composerStatus.hidden = true;
     this.elements.composerStatusText.textContent = '';
     delete this.elements.composerStatus.dataset.variant;
+    this.hideRetryButton();
   }
 
-  private formatChatFailure(error: string) {
+  private formatChatFailure(error: string, code?: FailureCode, status?: number | null) {
+    if (code && code !== 'unknown') {
+      switch (code) {
+        case 'timeout':
+          return t('chat__errorTimeout');
+        case 'auth':
+          return t('chat__errorAuthFailed');
+        case 'model_unavailable':
+          return t('chat__errorModelUnavailable');
+        case 'network':
+          return t('chat__errorNetwork');
+        case 'parse':
+          return t('chat__errorParseFailed');
+        case 'provider_not_found':
+          return t('chat__statusProviderNotFound');
+        case 'http_error':
+          return status ? this.formatServiceStatusFailure(String(status)) : t('chat__errorRequestFailed');
+        default:
+          break;
+      }
+    }
+
     const message = error.trim();
     if (!message) {
       return t('chat__errorRequestFailed');
