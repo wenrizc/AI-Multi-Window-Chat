@@ -1,8 +1,22 @@
+import type { FailureCode } from './errors';
+
 export type ChatRole = 'system' | 'user' | 'assistant';
 
 export type TransportType = 'chat_completions' | 'responses';
 
 export type ReasoningFormat = 'none' | 'openai_summary' | 'reasoning_content';
+
+/**
+ * How the provider request is authenticated.
+ *
+ * - `bearer`: inject `Authorization: Bearer <apiKey>` automatically.
+ * - `custom`: the user manages auth entirely through custom headers.
+ * - `none`:   no auth header is sent.
+ *
+ * Optional so that providers saved before this field existed keep working; it
+ * is normalized to `bearer` on read/write.
+ */
+export type AuthMode = 'bearer' | 'custom' | 'none';
 
 export type ChatMode = 'chat' | 'search';
 
@@ -35,6 +49,7 @@ export interface ProviderConfig {
   defaultModel: string;
   defaultGenerationParams: GenerationParams;
   headers: Record<string, string>;
+  authMode?: AuthMode;
   modelCatalog: ModelConfig[];
   createdAt: string;
   updatedAt: string;
@@ -119,13 +134,26 @@ export interface ChatSession {
   updatedAt: string;
 }
 
-export interface RootStore {
-  schemaVersion: 4;
+export interface StorageConfig {
+  schemaVersion: 5;
   providers: ProviderConfig[];
   prompts: PromptConfig[];
   featureSettings: FeatureSettings;
+}
+
+export interface ChatIndexEntry {
+  chatId: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
+  approxBytes: number;
+}
+
+export interface RootStore extends StorageConfig {
   chatHistory: ChatSession[];
 }
+
+export const STORAGE_SCHEMA_VERSION = 5 as const;
 
 export interface ChatRequestMessage {
   role: ChatRole;
@@ -218,7 +246,7 @@ type StreamEventBase = {
   usageUpdate: { type: 'usageUpdate'; usage: UsageMetrics | null };
   completed: { type: 'completed'; response: LlmResponseSummary };
   aborted: { type: 'aborted' };
-  failed: { type: 'failed'; error: string };
+  failed: { type: 'failed'; error: string; code: FailureCode; retryable: boolean; status?: number | null };
 };
 
 export type StreamEventPayload = StreamEventBase[keyof StreamEventBase];

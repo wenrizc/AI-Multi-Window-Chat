@@ -23,6 +23,7 @@ export function createProvider(input: Partial<ProviderConfig> = {}): ProviderCon
     defaultModel: 'test-model',
     defaultGenerationParams: { temperature: null },
     headers: {},
+    authMode: 'bearer',
     modelCatalog: [
       {
         modelId: 'test-model',
@@ -119,7 +120,7 @@ export function createPersistedMessage(input: Partial<PersistedMessage> = {}): P
 
 export function createRootStore(input: Partial<RootStore> = {}): RootStore {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     providers: [],
     prompts: [],
     featureSettings: createFeatureSettings(),

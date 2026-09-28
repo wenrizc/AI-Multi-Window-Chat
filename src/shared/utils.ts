@@ -60,6 +60,35 @@ export function isDeepSeekModelId(modelId: string): boolean {
   return modelId.toLowerCase().includes('deepseek');
 }
 
+/**
+ * RFC 7230 `token` characters. Header names outside this set cannot be sent by
+ * `fetch` and are rejected before they reach the network layer.
+ */
+const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+export function isValidHeaderName(name: string): boolean {
+  return HEADER_NAME_PATTERN.test(name);
+}
+
+/**
+ * Cleans a user-supplied custom-header map: trims names, drops blank and
+ * invalid names, and keeps the last value for duplicates.
+ */
+export function normalizeCustomHeaders(headers: Record<string, string> | null | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!headers) {
+    return result;
+  }
+  for (const [rawName, rawValue] of Object.entries(headers)) {
+    const name = rawName.trim();
+    if (!name || !isValidHeaderName(name)) {
+      continue;
+    }
+    result[name] = String(rawValue);
+  }
+  return result;
+}
+
 export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')

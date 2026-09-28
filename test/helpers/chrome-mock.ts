@@ -67,6 +67,13 @@ export type ChromeMockState = {
   lastTabMessage: () => { tabId: number; message: unknown } | null;
   /** The latest port created via `runtime.connect`. */
   lastPort: () => PortMock | null;
+  /**
+   * Overrides the simulated `storage.local` quota. `null` disables quota
+   * enforcement; a number makes `set` reject writes larger than that budget.
+   */
+  setStorageLimit: (bytes: number | null) => void;
+  /** Makes the next `set` that contains `key` throw once (simulating I/O failure). */
+  failNextSetForKey: (key: string) => void;
 };
 
 function substitute(message: string, substitutions: Array<string | number>): string {
@@ -76,10 +83,21 @@ function substitute(message: string, substitutions: Array<string | number>): str
   }).replace(/\$\$/g, '$');
 }
 
+/** Approximate serialized size of a set of storage entries. */
+function measureStorage(items: Record<string, unknown>): number {
+  let total = 0;
+  for (const [key, value] of Object.entries(items)) {
+    total += key.length + (JSON.stringify(value)?.length ?? 0);
+  }
+  return total;
+}
+
 export function createChromeMock(options: { messages?: MessagesMap } = {}): ChromeMock {
   const messages = options.messages ?? {};
 
   let storage: Record<string, unknown> = {};
+  let storageLimitBytes: number | null = null;
+  let failNextSetKey: string | null = null;
   let ports: PortMock[] = [];
   let runtimeMessages: unknown[] = [];
   let tabMessages: Array<{ tabId: number; message: unknown }> = [];
@@ -202,7 +220,16 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
           return {};
         },
         set: async (items: Record<string, unknown>) => {
-          storage = { ...storage, ...items };
+          if (failNextSetKey && Object.prototype.hasOwnProperty.call(items, failNextSetKey)) {
+            const key = failNextSetKey;
+            failNextSetKey = null;
+            throw new Error(`Simulated storage write failure for ${key}`);
+          }
+          const next = { ...storage, ...items };
+          if (storageLimitBytes !== null && measureStorage(next) > storageLimitBytes) {
+            throw new Error('QUOTA_BYTES quota exceeded');
+          }
+          storage = next;
         },
         remove: async (keys: string | string[]) => {
           const list = Array.isArray(keys) ? keys : [keys];
@@ -213,6 +240,20 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
         clear: async () => {
           storage = {};
         },
+        getBytesInUse: async (keys?: unknown) => {
+          if (keys === undefined || keys === null) {
+            return measureStorage(storage);
+          }
+          const list = Array.isArray(keys) ? keys : [keys];
+          const subset: Record<string, unknown> = {};
+          for (const key of list) {
+            if (typeof key === 'string' && key in storage) {
+              subset[key] = storage[key];
+            }
+          }
+          return measureStorage(subset);
+        },
+        QUOTA_BYTES: 10 * 1024 * 1024,
         onChanged: {
           addListener: () => undefined,
           removeListener: () => undefined
@@ -289,6 +330,8 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
     },
     reset: () => {
       storage = {};
+      storageLimitBytes = null;
+      failNextSetKey = null;
       ports = [];
       runtimeMessages = [];
       tabMessages = [];
@@ -329,7 +372,13 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
       port.emit(message);
     },
     lastTabMessage: () => (tabMessages.length > 0 ? tabMessages[tabMessages.length - 1] : null),
-    lastPort: () => (ports.length > 0 ? ports[ports.length - 1] : null)
+    lastPort: () => (ports.length > 0 ? ports[ports.length - 1] : null),
+    setStorageLimit: (bytes) => {
+      storageLimitBytes = bytes;
+    },
+    failNextSetForKey: (key) => {
+      failNextSetKey = key;
+    }
   };
 
   return { chrome, state };
