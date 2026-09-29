@@ -19,6 +19,7 @@ import {
   getStorageUsage,
   getStore,
   listChatSummaries,
+  normalizeSession,
   saveConfig,
   saveStore,
   updateChatSession,
@@ -52,6 +53,31 @@ describe('createEmptyStore', () => {
     expect(store.chatHistory).toEqual([]);
     expect(store.featureSettings.defaultStreaming).toBe(false);
     expect(store.featureSettings.search.enabledByDefault).toBe(false);
+  });
+});
+
+describe('session normalization', () => {
+  it('drops malformed messages and supplies safe defaults for nested fields', () => {
+    const session = normalizeSession({
+      chatId: 'chat-1',
+      messages: [
+        { role: 'assistant', content: 'valid', toolCalls: [{ name: 'search', status: 'pending' }] },
+        { role: 'assistant', content: 42 },
+        { role: 'unknown', content: 'invalid role' }
+      ],
+      totalUsage: { inputTokens: '12' }
+    });
+
+    expect(session?.messages).toHaveLength(1);
+    expect(session?.messages[0].content).toBe('valid');
+    expect(session?.messages[0].toolCalls[0]).toMatchObject({
+      name: 'search',
+      status: 'pending',
+      arguments: '',
+      output: null
+    });
+    expect(session?.totalUsage?.inputTokens).toBe(12);
+    expect(session?.totalUsage?.outputTokens).toBeNull();
   });
 });
 

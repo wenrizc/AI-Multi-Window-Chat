@@ -14,10 +14,15 @@ import type {
   ChatIndexEntry,
   ChatSession,
   FeatureSettings,
+  PersistedMessage,
   RootStore,
-  StorageConfig
+  SearchMeta,
+  SearchSource,
+  StorageConfig,
+  ToolCallRecord,
+  UsageMetrics
 } from './types';
-import { nowIso } from './utils';
+import { createUsageMetrics, nowIso } from './utils';
 
 /**
  * Schema v5 storage.
@@ -146,6 +151,105 @@ export function normalizeConfig(config: StorageConfig): { config: StorageConfig;
   return { config: next, changed };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizeUsage(value: unknown): UsageMetrics | null {
+  return isRecord(value) ? createUsageMetrics(value as Partial<UsageMetrics>) : null;
+}
+
+function normalizeToolCalls(value: unknown): ToolCallRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item) || typeof item.name !== 'string') {
+      return [];
+    }
+    const status = item.status === 'completed' || item.status === 'failed' || item.status === 'pending'
+      ? item.status
+      : 'failed';
+    return [{
+      id: typeof item.id === 'string' && item.id ? item.id : `tool-${index + 1}`,
+      name: item.name,
+      status,
+      arguments: typeof item.arguments === 'string' ? item.arguments : '',
+      output: typeof item.output === 'string' ? item.output : null
+    }];
+  });
+}
+
+function normalizeSources(value: unknown): SearchSource[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item) || typeof item.title !== 'string' || typeof item.url !== 'string') {
+      return [];
+    }
+    return [{
+      id: typeof item.id === 'string' && item.id ? item.id : `source-${index + 1}`,
+      title: item.title,
+      url: item.url,
+      snippet: typeof item.snippet === 'string' ? item.snippet : '',
+      score: typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : null,
+      query: typeof item.query === 'string' ? item.query : '',
+      credits: typeof item.credits === 'number' && Number.isFinite(item.credits) ? item.credits : null
+    }];
+  });
+}
+
+function normalizeSearchMeta(value: unknown): SearchMeta | null {
+  if (!isRecord(value) || !Array.isArray(value.queries)) {
+    return null;
+  }
+  const queries = value.queries.filter((query): query is string => typeof query === 'string');
+  if (queries.length !== value.queries.length) {
+    return null;
+  }
+  return {
+    queries,
+    credits: typeof value.credits === 'number' && Number.isFinite(value.credits) ? value.credits : null,
+    sourceCount: typeof value.sourceCount === 'number' && Number.isFinite(value.sourceCount)
+      ? Math.max(0, Math.floor(value.sourceCount))
+      : 0,
+    rounds: typeof value.rounds === 'number' && Number.isFinite(value.rounds)
+      ? Math.max(0, Math.floor(value.rounds))
+      : queries.length
+  };
+}
+
+function normalizeMessage(value: unknown, index: number): PersistedMessage | null {
+  if (!isRecord(value) || typeof value.content !== 'string') {
+    return null;
+  }
+  const role = value.role === 'system' || value.role === 'user' || value.role === 'assistant'
+    ? value.role
+    : null;
+  if (!role) {
+    return null;
+  }
+
+  return {
+    id: typeof value.id === 'string' && value.id ? value.id : `message-${index + 1}`,
+    role,
+    content: value.content,
+    reasoningSummary: typeof value.reasoningSummary === 'string' ? value.reasoningSummary : null,
+    toolCalls: normalizeToolCalls(value.toolCalls),
+    sources: normalizeSources(value.sources),
+    tokenUsage: normalizeUsage(value.tokenUsage),
+    mode: value.mode === 'search' ? 'search' : 'chat',
+    providerId: typeof value.providerId === 'string' ? value.providerId : null,
+    modelId: typeof value.modelId === 'string' ? value.modelId : null,
+    promptId: typeof value.promptId === 'string' ? value.promptId : null,
+    searchMeta: normalizeSearchMeta(value.searchMeta),
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : nowIso()
+  };
+}
+
 export function normalizeSession(raw: unknown): ChatSession | null {
   if (!raw || typeof raw !== 'object') {
     return null;
@@ -155,16 +259,23 @@ export function normalizeSession(raw: unknown): ChatSession | null {
     return null;
   }
   const createdAt = typeof session.createdAt === 'string' ? session.createdAt : nowIso();
+  const messages = Array.isArray(session.messages)
+    ? session.messages
+      .map((message, index) => normalizeMessage(message, index))
+      .filter((message): message is PersistedMessage => message !== null)
+    : [];
   return {
     chatId: session.chatId,
     title: typeof session.title === 'string' && session.title ? session.title : session.chatId,
-    providerId: session.providerId ?? null,
-    promptId: session.promptId ?? null,
-    streamingOverride: session.streamingOverride ?? null,
-    maxContextMessagesOverride: session.maxContextMessagesOverride ?? null,
+    providerId: typeof session.providerId === 'string' ? session.providerId : null,
+    promptId: typeof session.promptId === 'string' ? session.promptId : null,
+    streamingOverride: typeof session.streamingOverride === 'boolean' ? session.streamingOverride : null,
+    maxContextMessagesOverride: typeof session.maxContextMessagesOverride === 'number' && Number.isFinite(session.maxContextMessagesOverride)
+      ? Math.max(1, Math.floor(session.maxContextMessagesOverride))
+      : null,
     mode: session.mode === 'search' ? 'search' : 'chat',
-    messages: Array.isArray(session.messages) ? session.messages : [],
-    totalUsage: session.totalUsage ?? null,
+    messages,
+    totalUsage: normalizeUsage(session.totalUsage),
     createdAt,
     updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : createdAt
   };
