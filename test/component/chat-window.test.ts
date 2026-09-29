@@ -234,8 +234,9 @@ describe('chat window settings', () => {
       'p1'
     );
 
-    window.dispatchEvent(new MessageEvent('message', { data: { type: 'TOGGLE_SETTINGS_PANEL' } }));
-    expect(el('settingsPanel').hidden).toBe(false);
+    const extensionOrigin = window.location.origin;
+    window.postMessage({ type: 'TOGGLE_SETTINGS_PANEL' }, extensionOrigin);
+    await waitFor(() => el('settingsPanel').hidden === false);
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(el('settingsPanel').hidden).toBe(true);
@@ -343,19 +344,16 @@ describe('chat window history init', () => {
       'p1'
     );
 
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: {
-          type: 'INIT_CHAT',
-          chatId: 'chat-history',
-          historyMessages: [
-            createPersistedMessage({ id: 'h1', role: 'user', content: 'previous question' }),
-            createPersistedMessage({ id: 'h2', role: 'assistant', content: 'previous answer' })
-          ],
-          initialMessage: 'draft message'
-        }
-      })
-    );
+    const extensionOrigin = window.location.origin;
+    window.postMessage({
+      type: 'INIT_CHAT',
+      chatId: 'chat-history',
+      historyMessages: [
+        createPersistedMessage({ id: 'h1', role: 'user', content: 'previous question' }),
+        createPersistedMessage({ id: 'h2', role: 'assistant', content: 'previous answer' })
+      ],
+      initialMessage: 'draft message'
+    }, extensionOrigin);
 
     await waitFor(() => document.querySelectorAll('.message').length === 2);
     expect(document.querySelector('.message-assistant .message-content')?.textContent).toContain('previous answer');

@@ -11,7 +11,7 @@ export function safeLinkHref(value: unknown): string | null {
   }
   if (
     url.startsWith('#') ||
-    url.startsWith('/') ||
+    (url.startsWith('/') && !url.startsWith('//')) ||
     url.startsWith('./') ||
     url.startsWith('../')
   ) {

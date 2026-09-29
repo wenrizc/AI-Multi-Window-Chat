@@ -56,6 +56,24 @@ type AssistantRenderState = {
   footer: HTMLElement;
 };
 
+function getExpectedMessageOrigin(): string {
+  // The embedded chat receives messages from the page that owns the iframe.
+  // A standalone extension page receives them from the extension itself.
+  if (document.referrer) {
+    try {
+      return new URL(document.referrer).origin;
+    } catch {
+      // Fall through to the current document origin for malformed referrers.
+    }
+  }
+  return window.location.origin;
+}
+
+function isTrustedWindowMessage(event: MessageEvent): boolean {
+  const sourceIsParent = event.source === window.parent || event.source === window;
+  return sourceIsParent && event.origin === getExpectedMessageOrigin();
+}
+
 class ChatWindowApp {
   private chatId = uid('chat');
   private windowTitle = '';
@@ -130,6 +148,9 @@ class ChatWindowApp {
     });
 
     window.addEventListener('message', (event) => {
+      if (!isTrustedWindowMessage(event)) {
+        return;
+      }
       if (event.data?.type === 'INIT_CHAT') {
         this.applyInitPayload(event.data);
         return;

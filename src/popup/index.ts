@@ -496,14 +496,14 @@ class PopupApp {
     }
 
     elements.profileList.innerHTML = this.store.providers.map((provider) => `
-      <button class="profile-item ${provider.id === this.selectedProviderId ? 'active' : ''} ${provider.id === this.store.featureSettings.defaultProviderId ? 'current' : ''}" data-id="${provider.id}">
+      <button class="profile-item ${provider.id === this.selectedProviderId ? 'active' : ''} ${provider.id === this.store.featureSettings.defaultProviderId ? 'current' : ''}" data-id="${escapeHtml(provider.id)}">
         <span class="profile-dot"></span>
         <span class="profile-name">${escapeHtml(provider.name)}</span>
       </button>
     `).join('');
 
     elements.activeProfileSelect.innerHTML = this.store.providers
-      .map((provider) => `<option value="${provider.id}">${escapeHtml(provider.name)}</option>`)
+      .map((provider) => `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.name)}</option>`)
       .join('');
     elements.activeProfileSelect.value = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? '';
   }
@@ -802,13 +802,13 @@ class PopupApp {
       return;
     }
     elements.promptList.innerHTML = this.store.prompts.map((prompt) => `
-      <button class="profile-item ${prompt.id === this.selectedPromptId ? 'active' : ''} ${prompt.id === this.store.featureSettings.defaultPromptId ? 'current' : ''}" data-id="${prompt.id}">
+      <button class="profile-item ${prompt.id === this.selectedPromptId ? 'active' : ''} ${prompt.id === this.store.featureSettings.defaultPromptId ? 'current' : ''}" data-id="${escapeHtml(prompt.id)}">
         <span class="profile-dot"></span>
         <span class="profile-name">${escapeHtml(prompt.name)}</span>
       </button>
     `).join('');
     elements.defaultPromptSelect.innerHTML = `<option value="">${escapeHtml(t('prompt__noPrompt'))}</option>` + this.store.prompts
-      .map((prompt) => `<option value="${prompt.id}">${escapeHtml(prompt.name)}</option>`)
+      .map((prompt) => `<option value="${escapeHtml(prompt.id)}">${escapeHtml(prompt.name)}</option>`)
       .join('');
     elements.defaultPromptSelect.value = this.store.featureSettings.defaultPromptId ?? '';
   }
@@ -915,7 +915,7 @@ class PopupApp {
       return;
     }
     elements.historyList.innerHTML = filteredHistory.map((chat) => `
-      <div class="history-item" data-id="${chat.chatId}">
+      <div class="history-item" data-id="${escapeHtml(chat.chatId)}">
         <div class="history-item-header">
           <div class="history-item-icon">💬</div>
           <div class="history-item-title">${escapeHtml(chat.title)}</div>
@@ -923,9 +923,9 @@ class PopupApp {
         <div class="history-item-meta">${new Date(chat.updatedAt).toLocaleString()} · ${escapeHtml(t('history__messageCount', chat.messages.length))}</div>
         <div class="history-item-summary">${escapeHtml(this.getHistorySummary(chat))}</div>
         <div class="history-item-actions">
-          <button class="btn btn-secondary btn-small" data-action="resume" data-id="${chat.chatId}">${escapeHtml(t('history__btnResume'))}</button>
-          <button class="btn btn-secondary btn-small" data-action="export" data-id="${chat.chatId}">${escapeHtml(t('history__btnExport'))}</button>
-          <button class="btn btn-danger btn-small" data-action="delete" data-id="${chat.chatId}">${escapeHtml(t('history__btnDelete'))}</button>
+          <button class="btn btn-secondary btn-small" data-action="resume" data-id="${escapeHtml(chat.chatId)}">${escapeHtml(t('history__btnResume'))}</button>
+          <button class="btn btn-secondary btn-small" data-action="export" data-id="${escapeHtml(chat.chatId)}">${escapeHtml(t('history__btnExport'))}</button>
+          <button class="btn btn-danger btn-small" data-action="delete" data-id="${escapeHtml(chat.chatId)}">${escapeHtml(t('history__btnDelete'))}</button>
         </div>
       </div>
     `).join('');

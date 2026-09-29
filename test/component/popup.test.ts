@@ -71,6 +71,19 @@ beforeEach(() => {
 });
 
 describe('popup providers', () => {
+  it('escapes imported provider ids when rendering attributes', async () => {
+    const maliciousId = 'provider" onmouseover="alert(1)';
+    await bootPopup({
+      providers: [createProvider({ id: maliciousId, name: 'Imported' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: maliciousId }
+    });
+
+    await waitFor(() => document.querySelectorAll('#profileList .profile-item').length === 1);
+    const item = document.querySelector<HTMLElement>('#profileList .profile-item');
+    expect(item?.dataset.id).toBe(maliciousId);
+    expect(document.querySelector('[onmouseover]')).toBeNull();
+  });
+
   it('renders providers and marks the default one', async () => {
     await bootPopup({
       providers: [

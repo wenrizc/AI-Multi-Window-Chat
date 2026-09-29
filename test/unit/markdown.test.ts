@@ -15,6 +15,7 @@ describe('safeLinkHref', () => {
     expect(safeLinkHref('/path')).toBe('/path');
     expect(safeLinkHref('./path')).toBe('./path');
     expect(safeLinkHref('../path')).toBe('../path');
+    expect(safeLinkHref('//external.example/path')).toBeNull();
   });
 
   it('rejects executable and data schemes', () => {
@@ -42,7 +43,7 @@ describe('safeLinkHref', () => {
         return (
           /^(https?:|mailto:)/i.test(result) ||
           result.startsWith('#') ||
-          result.startsWith('/') ||
+          (result.startsWith('/') && !result.startsWith('//')) ||
           result.startsWith('./') ||
           result.startsWith('../')
         );
