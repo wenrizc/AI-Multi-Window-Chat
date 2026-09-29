@@ -112,8 +112,8 @@ test('completes a chat round trip through the real extension', async () => {
   await expect
     .poll(async () => {
       const history = await serviceWorker.evaluate(async () => {
-        const result = await chrome.storage.local.get('app_state_v4');
-        return (result.app_state_v4 as { chatHistory?: unknown[] } | undefined)?.chatHistory ?? [];
+        const result = await chrome.storage.local.get('chat_index_v5');
+        return (result.chat_index_v5 as unknown[] | undefined) ?? [];
       });
       return history.length;
     })
