@@ -713,7 +713,9 @@
     "message": "AI 对话 $number$",
     "description": "内容脚本对话窗口的默认标题",
     "placeholders": {
-      "number": { "content": "$1" }
+      "number": {
+        "content": "$1"
+      }
     }
   },
   "chat__settingsModel": {
@@ -1011,5 +1013,77 @@
   "website__privacyFooterHtml": {
     "message": "开源项目：<a href=\"https://github.com/wenrizc/AI-Multi-Window-Chat\">github.com/wenrizc/AI-Multi-Window-Chat</a><br>许可证：MIT License",
     "description": "网站隐私页页脚段落"
+  },
+  "chat__settingsReasoning": {
+    "message": "思考强度",
+    "description": "思考强度设置"
+  },
+  "chat__reasoningEffortNone": {
+    "message": "关闭",
+    "description": "chat__reasoningEffortNone"
+  },
+  "chat__reasoningEffortLow": {
+    "message": "低",
+    "description": "低思考强度"
+  },
+  "chat__reasoningEffortMedium": {
+    "message": "中",
+    "description": "中思考强度"
+  },
+  "chat__reasoningEffortHigh": {
+    "message": "高",
+    "description": "高思考强度"
+  },
+  "chat__btnAttach": {
+    "message": "添加附件",
+    "description": "添加图片或文本附件"
+  },
+  "chat__attachmentParsing": {
+    "message": "解析中",
+    "description": "附件解析中"
+  },
+  "chat__attachmentReady": {
+    "message": "已就绪",
+    "description": "附件已就绪"
+  },
+  "chat__attachmentError": {
+    "message": "失败",
+    "description": "附件解析失败"
+  },
+  "chat__attachmentOnly": {
+    "message": "请查看附件",
+    "description": "仅发送附件时的占位文本"
+  },
+  "chat__reasoningEffortDefault": {
+    "message": "模型默认",
+    "description": "chat__reasoningEffortDefault"
+  },
+  "chat__reasoningEffortMax": {
+    "message": "最高",
+    "description": "chat__reasoningEffortMax"
+  },
+  "chat__reasoningHint": {
+    "message": "从下一次发送生效。若服务商拒绝该档位，请选择模型默认或其他值。",
+    "description": "chat__reasoningHint"
+  },
+  "chat__customEfforts": {
+    "message": "自定义思考档位",
+    "description": "chat__customEfforts"
+  },
+  "chat__customEffortsHelp": {
+    "message": "支持多个值，用逗号或换行分隔。保存后加入下拉列表，每次仅发送所选值；删除后保存即可移除。",
+    "description": "chat__customEffortsHelp"
+  },
+  "chat__saveCustomEfforts": {
+    "message": "保存自定义档位",
+    "description": "chat__saveCustomEfforts"
+  },
+  "chat__customEffortsSaved": {
+    "message": "自定义档位已保存",
+    "description": "chat__customEffortsSaved"
+  },
+  "chat__customEffortsFailed": {
+    "message": "保存失败，请重试",
+    "description": "chat__customEffortsFailed"
   }
 }

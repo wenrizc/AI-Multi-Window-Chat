@@ -61,6 +61,31 @@ body {
   box-shadow: var(--shadow-card);
 }
 
+.attachment-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.attachment-btn:hover { color: var(--accent); border-color: #93b4f8; background: var(--surface-accent); }
+.attachment-btn:active { transform: scale(.96); }
+.attachment-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px 5px; }
+.attachment-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 260px; padding: 4px 6px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface-muted); color: var(--text-secondary); font-size: 11px; }
+.attachment-chip img { width: 26px; height: 26px; object-fit: cover; border-radius: 5px; }
+.attachment-file { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-size: 9px; font-weight: 800; }
+.attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-status { color: var(--text-muted); }
+.attachment-chip.error { border-color: #fecdd3; color: var(--danger); }
+.attachment-chip button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+
 .chat-settings-panel {
   padding: 12px;
 }
@@ -780,4 +805,29 @@ body {
   .chat-settings-panel {
     border-radius: 10px;
   }
+}
+
+.chat-settings-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: inherit;
+}
+#saveCustomEffortsBtn {
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-accent);
+  color: var(--accent);
+  cursor: pointer;
+}
+#saveCustomEffortsBtn:disabled { opacity: .6; cursor: wait; }
+.chat-settings-field textarea:focus-visible, #saveCustomEffortsBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

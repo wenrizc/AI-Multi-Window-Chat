@@ -785,3 +785,32 @@ describe('search tool session', () => {
     expect(result.toolCalls[0].output).toBe('Expected a non-empty query string.');
   });
 });
+
+describe.each(['chat_completions', 'responses'] as const)('reasoning wire format: %s', (transport) => {
+  it.each(['default', 'none', 'low', 'medium', 'high', 'max', 'xhigh', 'custom-effort'])('forwards %s exactly without duplicate fields', async (reasoningEffort) => {
+    let captured: Record<string, unknown> = {};
+    const endpoint = transport === 'responses' ? 'responses' : 'chat/completions';
+    server.use(http.post(TEST_BASE_URL + '/' + endpoint, async ({ request }) => {
+      captured = await request.json() as Record<string, unknown>;
+      return HttpResponse.json(transport === 'responses'
+        ? { output: [] } : { choices: [{ message: { content: 'ok' } }] });
+    }));
+    await completeProviderTurn({
+      provider: createProvider({ transport }),
+      model: createModel(),
+      messages: [{ role: 'user', content: 'hello' }],
+      generationParams: { temperature: null, reasoningEffort },
+      signal: new AbortController().signal
+    });
+    if (reasoningEffort === 'default') {
+      expect(captured).not.toHaveProperty('reasoning');
+      expect(captured).not.toHaveProperty('reasoning_effort');
+    } else if (transport === 'responses') {
+      expect(captured.reasoning).toEqual({ effort: reasoningEffort });
+      expect(captured).not.toHaveProperty('reasoning_effort');
+    } else {
+      expect(captured.reasoning_effort).toBe(reasoningEffort);
+      expect(captured).not.toHaveProperty('reasoning');
+    }
+  });
+});

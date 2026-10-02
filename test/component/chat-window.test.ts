@@ -360,3 +360,23 @@ describe('chat window history init', () => {
     expect(el<HTMLTextAreaElement>('messageInput').value).toBe('draft message');
   });
 });
+
+it('saves multiple custom levels, snapshots selection, and resets a deleted selection', async () => {
+  await bootChat({ providers: [createProvider({ id: 'p1' })], featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' } });
+  const input = el<HTMLTextAreaElement>('customEffortsInput');
+  setValue(input, 'xhigh, minimal，xhigh\nultra, high');
+  el<HTMLButtonElement>('saveCustomEffortsBtn').click();
+  const select = el<HTMLSelectElement>('reasoningEffortSelect');
+  await waitFor(() => select.options.length === 9);
+  expect(Array.from(select.options).map(o => o.value)).toEqual(['default', 'none', 'low', 'medium', 'high', 'max', 'xhigh', 'minimal', 'ultra']);
+  expect((await chrome.storage.local.get('customReasoningEfforts')).customReasoningEfforts).toEqual(['xhigh', 'minimal', 'ultra']);
+  setValue(select, 'ultra');
+  setValue(el<HTMLTextAreaElement>('messageInput'), 'hello');
+  el<HTMLButtonElement>('sendBtn').click();
+  const payload = await waitFor(() => lastStartChat());
+  expect(payload.reasoningEffort).toBe('ultra');
+  setValue(input, 'xhigh, minimal');
+  el<HTMLButtonElement>('saveCustomEffortsBtn').click();
+  await waitFor(() => select.value === 'default');
+  expect(payload.reasoningEffort).toBe('ultra');
+});

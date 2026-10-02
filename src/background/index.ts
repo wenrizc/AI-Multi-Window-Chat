@@ -242,6 +242,17 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
 
   try {
     let messages: ChatRequestMessage[] = request.messages;
+    if (request.attachments?.length && request.mode === 'chat') {
+      const last = messages[messages.length - 1];
+      if (last?.role === 'user') {
+        last.content = [
+          { type: 'text', text: typeof last.content === 'string' ? last.content : request.userMessage },
+          ...request.attachments
+            .filter((attachment) => attachment.status === 'ready' && attachment.mimeType.startsWith('image/'))
+            .map((attachment) => ({ type: 'image_url' as const, image_url: { url: attachment.dataUrl } }))
+        ];
+      }
+    }
 
     if (request.mode === 'search') {
       const searchResult = await runSearchToolSession({
@@ -250,7 +261,7 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
         messages,
         requestId: request.requestId,
         searchSettings: config.featureSettings.search,
-        generationParams: request.generationParams,
+        generationParams: { ...request.generationParams, reasoningEffort: request.reasoningEffort },
         signal: controller.signal,
         onEvent: (event) => {
           if (event.type === 'sourceUpdate') {
@@ -304,7 +315,7 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
         messages,
         requestId: request.requestId,
         signal: controller.signal,
-        generationParams: request.generationParams,
+        generationParams: { ...request.generationParams, reasoningEffort: request.reasoningEffort },
         streamingEnabled: request.streamingEnabled,
         onEvent: (event) => {
           if (event.type === 'contentDelta') {

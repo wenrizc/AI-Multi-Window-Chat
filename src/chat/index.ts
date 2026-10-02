@@ -8,7 +8,9 @@ import type {
   PersistedMessage,
   PromptConfig,
   ProviderConfig,
-  StreamEvent
+  StreamEvent,
+  ChatAttachment,
+  ReasoningEffort
 } from '../shared/types';
 import {
   escapeHtml,
@@ -96,6 +98,9 @@ class ChatWindowApp {
   private streamingOverride: boolean | null = null;
   private maxContextMessages: number | null = null;
   private maxContextMessagesOverride: number | null = null;
+  private reasoningEffort: ReasoningEffort = 'default';
+  private customEfforts: string[] = [];
+  private attachments: ChatAttachment[] = [];
   private currentMode: PersistedMessage['mode'] = 'chat';
   private composerStatusTimer: number | null = null;
   private composerStatusKey: string | null = null;
@@ -124,7 +129,13 @@ class ChatWindowApp {
     profileSelect: document.getElementById('profileSelect') as HTMLSelectElement,
     searchToggle: document.getElementById('searchToggle') as HTMLInputElement,
     streamingToggle: document.getElementById('streamingToggle') as HTMLInputElement,
-    maxContextMessagesInput: document.getElementById('maxContextMessagesInput') as HTMLInputElement,
+    reasoningEffortSelect: document.getElementById('reasoningEffortSelect') as HTMLSelectElement,
+    customEffortsInput: document.getElementById('customEffortsInput') as HTMLTextAreaElement,
+    saveCustomEffortsBtn: document.getElementById('saveCustomEffortsBtn') as HTMLButtonElement,
+    customEffortsStatus: document.getElementById('customEffortsStatus') as HTMLElement,
+    attachmentInput: document.getElementById('attachmentInput') as HTMLInputElement,
+    attachmentBtn: document.getElementById('attachmentBtn') as HTMLButtonElement,
+    attachmentTray: document.getElementById('attachmentTray') as HTMLElement,
     settingsPanel: document.getElementById('settingsPanel') as HTMLElement,
     settingsCloseBtn: document.getElementById('settingsCloseBtn') as HTMLButtonElement
   };
@@ -165,6 +176,18 @@ class ChatWindowApp {
     });
 
     await this.reloadStore();
+    const saved = await chrome.storage.local.get('customReasoningEfforts');
+    this.customEfforts = this.parseCustomEfforts(Array.isArray(saved.customReasoningEfforts)
+      ? saved.customReasoningEfforts.filter((value: unknown) => typeof value === 'string').join('\n')
+      : '');
+    this.renderReasoningOptions();
+    chrome.storage.onChanged?.addListener((changes, area) => {
+      if (area === 'local' && changes.customReasoningEfforts) {
+        const values = changes.customReasoningEfforts.newValue;
+        this.customEfforts = this.parseCustomEfforts(Array.isArray(values) ? values.filter((v: unknown) => typeof v === 'string').join('\n') : '');
+        this.renderReasoningOptions();
+      }
+    });
     this.renderSelectors();
   }
 
@@ -201,9 +224,7 @@ class ChatWindowApp {
     if ('streamingOverride' in payload) {
       this.streamingOverride = payload.streamingOverride ?? null;
     }
-    if ('maxContextMessagesOverride' in payload) {
-      this.maxContextMessagesOverride = payload.maxContextMessagesOverride ?? null;
-    }
+    this.maxContextMessagesOverride = null;
 
     if (Array.isArray(payload.historyMessages) && payload.historyMessages.length > 0) {
       this.messages = payload.historyMessages;
@@ -222,6 +243,18 @@ class ChatWindowApp {
 
   private bindEvents() {
     this.elements.sendBtn.addEventListener('click', () => this.handlePrimaryAction());
+    this.elements.attachmentBtn.addEventListener('click', () => this.elements.attachmentInput.click());
+    this.elements.attachmentInput.addEventListener('change', () => {
+      void this.addFiles(Array.from(this.elements.attachmentInput.files ?? []));
+      this.elements.attachmentInput.value = '';
+    });
+    this.elements.messageInput.addEventListener('paste', (event) => {
+      const files = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
+      if (files.length) {
+        event.preventDefault();
+        void this.addFiles(files);
+      }
+    });
     this.elements.composerRetryBtn.addEventListener('click', () => this.retryLastRequest());
     this.elements.settingsCloseBtn.addEventListener('click', () => this.setSettingsPanelOpen(false));
     this.elements.messagesContainer.addEventListener('scroll', () => {
@@ -264,14 +297,10 @@ class ChatWindowApp {
       this.syncSessionSettingsFromModel();
       this.clearComposerStatus();
     });
-    this.elements.maxContextMessagesInput.addEventListener('change', () => {
-      const model = this.getCurrentModel();
-      const modelDefault = model?.maxContextMessages ?? null;
-      const next = normalizeMaxContextMessages(this.elements.maxContextMessagesInput.value);
-      this.maxContextMessagesOverride = next === modelDefault ? null : next;
-      this.syncSessionSettingsFromModel();
-      this.clearComposerStatus();
+    this.elements.reasoningEffortSelect.addEventListener('change', () => {
+      this.reasoningEffort = (this.elements.reasoningEffortSelect.value || 'default') as ReasoningEffort;
     });
+    this.elements.saveCustomEffortsBtn.addEventListener('click', () => void this.saveCustomEfforts());
     document.addEventListener('pointerdown', (event) => {
       if (!this.settingsOpen) {
         return;
@@ -287,6 +316,72 @@ class ChatWindowApp {
         this.setSettingsPanelOpen(false);
       }
     });
+  }
+
+  private parseCustomEfforts(value: string): string[] {
+    const builtins = new Set(['default', 'none', 'low', 'medium', 'high', 'max']);
+    return [...new Set(value.split(/[,，;；\r\n]+/).map((v) => v.trim()).filter((v) => v && !builtins.has(v)))];
+  }
+
+  private renderReasoningOptions() {
+    const select = this.elements.reasoningEffortSelect;
+    select.querySelectorAll('[data-custom-effort]').forEach((option) => option.remove());
+    for (const value of this.customEfforts) {
+      const option = new Option(value, value);
+      option.dataset.customEffort = 'true';
+      select.add(option);
+    }
+    if (!Array.from(select.options).some((option) => option.value === this.reasoningEffort)) {
+      this.reasoningEffort = 'default';
+    }
+    select.value = this.reasoningEffort;
+    this.elements.customEffortsInput.value = this.customEfforts.join(', ');
+  }
+
+  private async saveCustomEfforts() {
+    const values = this.parseCustomEfforts(this.elements.customEffortsInput.value);
+    this.elements.saveCustomEffortsBtn.disabled = true;
+    try {
+      await chrome.storage.local.set({ customReasoningEfforts: values });
+      this.customEfforts = values;
+      this.renderReasoningOptions();
+      this.elements.customEffortsStatus.textContent = t('chat__customEffortsSaved');
+    } catch {
+      this.elements.customEffortsStatus.textContent = t('chat__customEffortsFailed');
+    } finally {
+      this.elements.saveCustomEffortsBtn.disabled = false;
+    }
+  }
+
+  private async addFiles(files: File[]) {
+    for (const file of files) {
+      if (!(file.type.startsWith('image/') || file.type === 'text/plain' || file.name.toLowerCase().endsWith('.md'))) continue;
+      const attachment: ChatAttachment = { id: uid('attachment'), name: file.name, mimeType: file.type || 'text/plain', dataUrl: '', status: 'parsing' };
+      this.attachments.push(attachment);
+      this.renderAttachments();
+      try {
+        attachment.dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        attachment.status = 'ready';
+      } catch {
+        attachment.status = 'error';
+      }
+      this.renderAttachments();
+    }
+  }
+
+  private renderAttachments() {
+    const tray = this.elements.attachmentTray;
+    tray.hidden = this.attachments.length === 0;
+    tray.innerHTML = this.attachments.map((attachment) => `<div class="attachment-chip ${attachment.status}">${attachment.mimeType.startsWith('image/') && attachment.dataUrl ? `<img src="${attachment.dataUrl}" alt="">` : '<span class="attachment-file">TXT</span>'}<span class="attachment-name">${escapeHtml(attachment.name)}</span><span class="attachment-status">${escapeHtml(t(attachment.status === 'ready' ? 'chat__attachmentReady' : attachment.status === 'error' ? 'chat__attachmentError' : 'chat__attachmentParsing'))}</span><button type="button" data-remove-attachment="${attachment.id}" aria-label="Remove">×</button></div>`).join('');
+    tray.querySelectorAll<HTMLButtonElement>('[data-remove-attachment]').forEach((button) => button.addEventListener('click', () => {
+      this.attachments = this.attachments.filter((item) => item.id !== button.dataset.removeAttachment);
+      this.renderAttachments();
+    }));
   }
 
   private handlePrimaryAction() {
@@ -478,9 +573,6 @@ class ChatWindowApp {
     this.streamingEnabled = this.streamingOverride ?? modelStreaming;
     this.maxContextMessages = this.maxContextMessagesOverride ?? modelMaxContextMessages;
     this.elements.streamingToggle.checked = this.streamingEnabled;
-    this.elements.maxContextMessagesInput.value = this.maxContextMessages === null
-      ? ''
-      : String(this.maxContextMessages);
   }
 
   private syncStreamingControl() {
@@ -644,7 +736,11 @@ class ChatWindowApp {
 
   private async sendMessage() {
     const content = this.elements.messageInput.value.trim();
-    if (!content || this.isLoading) {
+    if ((!content && this.attachments.length === 0) || this.isLoading) {
+      return;
+    }
+    if (this.attachments.some((attachment) => attachment.status === 'parsing')) {
+      this.setLocalizedComposerStatus('chat__attachmentParsing', 'busy');
       return;
     }
 
@@ -682,8 +778,20 @@ class ChatWindowApp {
     }
 
     this.currentMode = this.elements.searchToggle.checked ? 'search' : 'chat';
-    await this.appendUserMessage(content);
+    const readyTextFiles = this.attachments.filter((a) => a.status === 'ready' && !a.mimeType.startsWith('image/'));
+    const effectiveContent = [content, ...readyTextFiles.map((a) => {
+      try {
+        const bytes = Uint8Array.from(atob(a.dataUrl.split(',')[1] || ''), (char) => char.charCodeAt(0));
+        return `\n[${a.name}]\n${new TextDecoder().decode(bytes)}`;
+      } catch {
+        return `\n[${a.name}]`;
+      }
+    })].filter(Boolean).join('\n').trim();
+    await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'));
     this.elements.messageInput.value = '';
+    const requestAttachments = this.attachments.filter((a) => a.status === 'ready' && a.mimeType.startsWith('image/'));
+    this.attachments = [];
+    this.renderAttachments();
     this.adjustTextareaHeight();
     this.isLoading = true;
     this.currentRequestId = uid('req');
@@ -726,11 +834,13 @@ class ChatWindowApp {
         streamingOverride: this.streamingOverride,
         maxContextMessages: this.maxContextMessages,
         maxContextMessagesOverride: this.maxContextMessagesOverride,
-        userMessage: content,
+        userMessage: effectiveContent || t('chat__attachmentOnly'),
         mode: this.currentMode,
         messages: requestMessages,
         generationParams: provider.defaultGenerationParams,
-        streamingEnabled: this.streamingEnabled
+        streamingEnabled: this.streamingEnabled,
+        reasoningEffort: this.reasoningEffort,
+        attachments: requestAttachments
       };
 
       this.port.postMessage({
@@ -751,7 +861,9 @@ class ChatWindowApp {
         mode: request.mode,
         messages: request.messages,
         generationParams: request.generationParams,
-        streamingEnabled: request.streamingEnabled
+        streamingEnabled: request.streamingEnabled,
+        reasoningEffort: request.reasoningEffort,
+        attachments: request.attachments
       };
     } catch (error) {
       console.error(error);

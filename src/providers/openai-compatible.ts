@@ -1,4 +1,5 @@
 import type {
+  GenerationParams,
   AssistantToolCallMessage,
   ModelConfig,
   ProviderConfig,
@@ -22,6 +23,12 @@ import {
   RequestGuard,
   type TimeoutBudget
 } from '../shared/timeout';
+
+function reasoningParameters(params: GenerationParams, responses: boolean): Record<string, unknown> {
+  const effort = params.reasoningEffort;
+  if (!effort || effort === 'default') return {};
+  return responses ? { reasoning: { effort } } : { reasoning_effort: effort };
+}
 
 interface StreamCallbacks {
   onEvent: (event: StreamEventPayload) => void;
@@ -137,7 +144,7 @@ function toChatMessages(messages: ProviderMessage[], includeReasoningContent: bo
     if (isAssistantToolCallMessage(message)) {
       const chatMessage: Record<string, unknown> = {
         role: 'assistant',
-        content: includeReasoningContent ? message.content : compactText(message.content),
+        content: includeReasoningContent ? message.content : compactText(typeof message.content === 'string' ? message.content : ''),
         tool_calls: message.toolCalls.map((toolCall) => ({
           id: toolCall.id,
           type: 'function',
@@ -168,12 +175,11 @@ function toResponsesTextInput(messages: ProviderMessage[]) {
 
     return [{
       role: message.role,
-      content: [
-        {
-          type: 'input_text',
-          text: message.content
-        }
-      ]
+      content: typeof message.content === 'string'
+        ? [{ type: 'input_text', text: message.content }]
+        : message.content.map((part) => part.type === 'text'
+          ? { type: 'input_text', text: part.text }
+          : { type: 'input_image', image_url: part.image_url.url })
     }];
   });
 }
@@ -508,7 +514,7 @@ async function streamChatCompletions(
   modelId: string,
   includeReasoningContent: boolean,
   messages: ProviderMessage[],
-  generationParams: { temperature: number | null },
+  generationParams: GenerationParams,
   callbacks: StreamCallbacks,
   tools?: ToolDefinition[],
   toolChoice?: ProviderToolChoice
@@ -526,6 +532,7 @@ async function streamChatCompletions(
           include_usage: true
         },
         temperature: generationParams.temperature ?? undefined,
+        ...reasoningParameters(generationParams, false),
         tools: toChatTools(tools),
         tool_choice: tools?.length ? toolChoice ?? 'auto' : undefined
       })
@@ -576,7 +583,7 @@ async function completeChatCompletions(
   modelId: string,
   includeReasoningContent: boolean,
   messages: ProviderMessage[],
-  generationParams: { temperature: number | null },
+  generationParams: GenerationParams,
   callbacks: StreamCallbacks,
   tools?: ToolDefinition[],
   toolChoice?: ProviderToolChoice
@@ -609,7 +616,7 @@ async function streamResponses(
   provider: ProviderConfig,
   modelId: string,
   messages: ProviderMessage[],
-  generationParams: { temperature: number | null },
+  generationParams: GenerationParams,
   callbacks: StreamCallbacks,
   tools?: ToolDefinition[],
   toolChoice?: ProviderToolChoice
@@ -624,6 +631,7 @@ async function streamResponses(
         input: toResponsesTextInput(messages),
         stream: true,
         temperature: generationParams.temperature ?? undefined,
+        ...reasoningParameters(generationParams, true),
         tools: toResponsesTools(tools),
         tool_choice: tools?.length ? toolChoice ?? 'auto' : undefined
       })
@@ -675,7 +683,7 @@ async function completeResponses(
   provider: ProviderConfig,
   modelId: string,
   messages: ProviderMessage[],
-  generationParams: { temperature: number | null },
+  generationParams: GenerationParams,
   callbacks: StreamCallbacks,
   tools?: ToolDefinition[],
   toolChoice?: ProviderToolChoice
@@ -708,7 +716,7 @@ async function completeChatTurn(input: {
   modelId: string;
   includeReasoningContent: boolean;
   messages: ProviderMessage[];
-  generationParams: { temperature: number | null };
+  generationParams: GenerationParams;
   signal: AbortSignal;
   tools?: ToolDefinition[];
   toolChoice?: ProviderToolChoice;
@@ -723,6 +731,7 @@ async function completeChatTurn(input: {
         messages: toChatMessages(input.messages, input.includeReasoningContent),
         stream: false,
         temperature: input.generationParams.temperature ?? undefined,
+        ...reasoningParameters(input.generationParams, false),
         tools: toChatTools(input.tools),
         tool_choice: input.tools?.length ? input.toolChoice ?? 'auto' : undefined
       })
@@ -757,7 +766,7 @@ async function completeResponsesTurn(input: {
   provider: ProviderConfig;
   modelId: string;
   messages?: ProviderMessage[];
-  generationParams: { temperature: number | null };
+  generationParams: GenerationParams;
   signal: AbortSignal;
   tools?: ToolDefinition[];
   toolChoice?: ProviderToolChoice;
@@ -767,7 +776,8 @@ async function completeResponsesTurn(input: {
   const body: Record<string, unknown> = {
     model: input.modelId,
     stream: false,
-    temperature: input.generationParams.temperature ?? undefined
+    temperature: input.generationParams.temperature ?? undefined,
+    ...reasoningParameters(input.generationParams, true)
   };
 
   if (input.previousResponseId) {
@@ -812,7 +822,7 @@ export async function completeProviderTurn(input: {
   provider: ProviderConfig;
   model: ModelConfig;
   messages?: ProviderMessage[];
-  generationParams: { temperature: number | null };
+  generationParams: GenerationParams;
   signal: AbortSignal;
   tools?: ToolDefinition[];
   toolChoice?: ProviderToolChoice;
@@ -849,7 +859,7 @@ export async function streamProviderResponse(input: {
   provider: ProviderConfig;
   model: ModelConfig;
   messages: ProviderMessage[];
-  generationParams: { temperature: number | null };
+  generationParams: GenerationParams;
   signal: AbortSignal;
   requestId: string;
   onEvent: (event: StreamEvent) => void;

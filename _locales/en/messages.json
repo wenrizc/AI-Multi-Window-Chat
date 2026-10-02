@@ -713,7 +713,9 @@
     "message": "AI Chat $number$",
     "description": "Default window title for content script chat windows",
     "placeholders": {
-      "number": { "content": "$1" }
+      "number": {
+        "content": "$1"
+      }
     }
   },
   "chat__settingsModel": {
@@ -1011,5 +1013,77 @@
   "website__privacyFooterHtml": {
     "message": "Open Source Project: <a href=\"https://github.com/wenrizc/AI-Multi-Window-Chat\">github.com/wenrizc/AI-Multi-Window-Chat</a><br>License: MIT License",
     "description": "Website privacy footer paragraph"
+  },
+  "chat__settingsReasoning": {
+    "message": "Thinking intensity",
+    "description": "Thinking intensity setting"
+  },
+  "chat__reasoningEffortNone": {
+    "message": "Off",
+    "description": "chat__reasoningEffortNone"
+  },
+  "chat__reasoningEffortLow": {
+    "message": "Low",
+    "description": "Low reasoning effort"
+  },
+  "chat__reasoningEffortMedium": {
+    "message": "Medium",
+    "description": "Medium reasoning effort"
+  },
+  "chat__reasoningEffortHigh": {
+    "message": "High",
+    "description": "High reasoning effort"
+  },
+  "chat__btnAttach": {
+    "message": "Add attachments",
+    "description": "Add image or text attachments"
+  },
+  "chat__attachmentParsing": {
+    "message": "Parsing",
+    "description": "Attachment parsing"
+  },
+  "chat__attachmentReady": {
+    "message": "Ready",
+    "description": "Attachment ready"
+  },
+  "chat__attachmentError": {
+    "message": "Failed",
+    "description": "Attachment parsing failed"
+  },
+  "chat__attachmentOnly": {
+    "message": "Please review the attachment",
+    "description": "Placeholder when sending an attachment only"
+  },
+  "chat__reasoningEffortDefault": {
+    "message": "Model default",
+    "description": "chat__reasoningEffortDefault"
+  },
+  "chat__reasoningEffortMax": {
+    "message": "Maximum",
+    "description": "chat__reasoningEffortMax"
+  },
+  "chat__reasoningHint": {
+    "message": "Applies to your next message. If rejected by the provider, choose Model default or another level.",
+    "description": "chat__reasoningHint"
+  },
+  "chat__customEfforts": {
+    "message": "Custom thinking levels",
+    "description": "chat__customEfforts"
+  },
+  "chat__customEffortsHelp": {
+    "message": "Separate multiple values with commas or new lines. Save to update the selector. Each request sends one selected value; delete values and save to remove them.",
+    "description": "chat__customEffortsHelp"
+  },
+  "chat__saveCustomEfforts": {
+    "message": "Save custom levels",
+    "description": "chat__saveCustomEfforts"
+  },
+  "chat__customEffortsSaved": {
+    "message": "Custom levels saved",
+    "description": "chat__customEffortsSaved"
+  },
+  "chat__customEffortsFailed": {
+    "message": "Could not save. Please try again.",
+    "description": "chat__customEffortsFailed"
   }
 }

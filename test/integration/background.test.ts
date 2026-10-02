@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import {
@@ -19,10 +19,25 @@ import type {
 } from '../../src/shared/types';
 import { chatSessionKey } from '../../src/shared/storage';
 import { getChromeState, type PortMock } from '../helpers/chrome-mock';
-import { createChatRequest, createChatSession, createProvider, TEST_BASE_URL } from '../helpers/factories';
+import { createChatRequest, createChatSession, createFeatureSettings, createProvider, TEST_BASE_URL } from '../helpers/factories';
+import { byteSse, deferred, llmTurn, scriptedLlm, type Transport } from '../helpers/llm-mock';
 
 const server = setupServer();
 const state = getChromeState();
+let scripts: ReturnType<typeof scriptedLlm>[] = [];
+
+function useScript(transport: Transport, steps: Parameters<typeof scriptedLlm>[1], baseUrl = TEST_BASE_URL) {
+  const script = scriptedLlm(transport, steps, baseUrl);
+  scripts.push(script);
+  server.use(script.handler);
+  return script;
+}
+
+afterEach(() => {
+  const current = scripts;
+  scripts = [];
+  current.forEach(script => script.verify());
+});
 
 /**
  * Seeds the legacy v4 blob so the background worker exercises the real v4 -> v5
@@ -217,6 +232,111 @@ describe('background chat streaming', () => {
     const session = currentStore().chatHistory[0];
     expect(session.messages.map((message) => message.role)).toEqual(['user']);
   });
+});
+
+describe.each<Transport>(['chat_completions', 'responses'])('background %s lifecycle', transport => {
+  it('reports malformed streaming data without saving a partial assistant answer', async () => {
+    seedStore({ providers: [createProvider({ transport })] });
+    const first = transport === 'responses'
+      ? { type: 'response.output_text.delta', delta: 'Incomplete' }
+      : { choices: [{ delta: { content: 'Incomplete' } }] };
+    useScript(transport, [() => byteSse(`data: ${JSON.stringify(first)}\n\ndata: {broken}\n\n`)]);
+    const port = connect();
+    port.emit({ type: 'start_chat', payload: createChatRequest({ streamingEnabled: true }) });
+    expect(await waitForEvent(port, event => event.type === 'failed')).toMatchObject({ code: 'parse', retryable: false });
+    expect(port.posted).toContainEqual({ type: 'contentDelta', requestId: 'req-test', delta: 'Incomplete' });
+    expect(port.posted.some(event => (event as StreamEvent).type === 'completed')).toBe(false);
+    expect(currentStore().chatHistory[0].messages.map(message => [message.role, message.content])).toEqual([['user', 'hello']]);
+    expect(currentStore().chatHistory[0].totalUsage).toBeNull();
+  });
+
+  it('persists only one user message after failure and a successful retry, then appends another turn', async () => {
+    seedStore({ providers: [createProvider({ transport })] });
+    useScript(transport, [
+      () => new HttpResponse(null, { status: 503 }),
+      () => llmTurn(transport, { content: 'Recovered' }),
+      () => llmTurn(transport, { content: 'Next answer' })
+    ]);
+    const port = connect();
+    for (const [requestId, userMessage, terminal] of [
+      ['first', 'hello', 'failed'], ['retry', 'hello', 'completed'], ['next', 'follow up', 'completed']
+    ]) {
+      port.emit({ type: 'start_chat', payload: createChatRequest({ requestId, userMessage, messages: [{ role: 'user', content: userMessage }] }) });
+      await waitForEvent(port, event => event.requestId === requestId && event.type === terminal);
+    }
+    const session = currentStore().chatHistory[0];
+    expect(session.messages.map(message => [message.role, message.content])).toEqual([
+      ['user', 'hello'], ['assistant', 'Recovered'], ['user', 'follow up'], ['assistant', 'Next answer']
+    ]);
+    expect(session.totalUsage?.totalTokens).toBe(10);
+    expect(currentStore().chatHistory).toHaveLength(1);
+  });
+
+  it('persists streamed content, reasoning and usage after delivering ordered port events', async () => {
+    seedStore({ providers: [createProvider({ transport })] });
+    useScript(transport, [() => byteSse(transport === 'responses'
+      ? 'data: {"type":"response.output_text.delta","delta":"你好"}\n\ndata: {"type":"response.reasoning_summary_text.delta","delta":"Think"}\n\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}\n\n'
+      : 'data: {"choices":[{"delta":{"content":"你好","reasoning_content":"Think"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\n\ndata: [DONE]\n\n')]);
+    const port = connect();
+    port.emit({ type: 'start_chat', payload: createChatRequest({ streamingEnabled: true }) });
+    const completed = await waitForEvent(port, event => event.type === 'completed');
+    expect(completed).toMatchObject({ response: { content: '你好', reasoningSummary: 'Think', usage: { totalTokens: 5 } } });
+    expect(port.posted.map(event => (event as StreamEvent).type)).toEqual(['started', 'statusUpdate', 'contentDelta', 'reasoningDelta', 'usageUpdate', 'completed']);
+    expect(currentStore().chatHistory[0].messages[1]).toMatchObject({ content: '你好', reasoningSummary: 'Think', tokenUsage: { totalTokens: 5 } });
+  });
+
+  it('persists search sources, tool records and usage across the complete background pipeline', async () => {
+    seedStore({ providers: [createProvider({ transport })], featureSettings: createFeatureSettings() });
+    useScript(transport, [
+      () => llmTurn(transport, { calls: [{ id: 'weather', name: 'web_search', arguments: '{"query":"weather"}' }] }),
+      () => llmTurn(transport, { content: 'Sunny today.' })
+    ]);
+    server.use(http.post('https://api.tavily.com/search', () => HttpResponse.json({ credits: 1, results: [{ title: 'Weather', url: 'https://weather.test', content: 'Sunny' }] })));
+    const port = connect();
+    port.emit({ type: 'start_chat', payload: createChatRequest({ mode: 'search' }) });
+    const completed = await waitForEvent(port, event => event.type === 'completed');
+    expect(completed).toMatchObject({ response: { content: 'Sunny today.', usage: { totalTokens: 10 }, searchMeta: { sourceCount: 1, credits: 1 }, toolCalls: [{ id: 'weather', status: 'completed' }] } });
+    const message = currentStore().chatHistory[0].messages[1];
+    expect(message).toMatchObject({ mode: 'search', content: 'Sunny today.', tokenUsage: { totalTokens: 10 }, sources: [{ url: 'https://weather.test' }], toolCalls: [{ id: 'weather', status: 'completed' }] });
+  });
+});
+
+it('disconnecting one window aborts its in-flight HTTP request while another window completes', async () => {
+  const secondUrl = 'https://second-llm.test/v1';
+  seedStore({ providers: [createProvider(), createProvider({ id: 'second', baseUrl: secondUrl })] });
+  const arrived = deferred<void>();
+  const aborted = deferred<void>();
+  const release = deferred<void>();
+  useScript('chat_completions', [async ({ request }) => {
+    request.signal.addEventListener('abort', () => aborted.resolve(), { once: true });
+    arrived.resolve();
+    await release.promise;
+    return llmTurn('chat_completions', { content: 'Must not persist' });
+  }]);
+  useScript('chat_completions', [async () => {
+    await release.promise;
+    return llmTurn('chat_completions', { content: 'Other window answer' });
+  }], secondUrl);
+  const first = connect();
+  const second = connect();
+  try {
+    first.emit({ type: 'start_chat', payload: createChatRequest({ requestId: 'one', chatId: 'one' }) });
+    second.emit({ type: 'start_chat', payload: createChatRequest({ requestId: 'two', chatId: 'two', providerId: 'second' }) });
+    await arrived.promise;
+    first.disconnect();
+    await aborted.promise;
+    await waitForEvent(first, event => event.type === 'aborted');
+    release.resolve();
+    await waitForEvent(second, event => event.type === 'completed');
+    expect(first.posted.every(event => (event as StreamEvent).requestId === 'one')).toBe(true);
+    expect(second.posted.every(event => (event as StreamEvent).requestId === 'two')).toBe(true);
+    expect(currentStore().chatHistory.find(chat => chat.chatId === 'one')?.messages.map(message => message.role)).toEqual(['user']);
+    expect(currentStore().chatHistory.find(chat => chat.chatId === 'two')?.messages.map(message => message.content)).toEqual(['hello', 'Other window answer']);
+  } finally {
+    release.resolve();
+    first.disconnect();
+    second.disconnect();
+  }
 });
 
 describe('background runtime messages', () => {

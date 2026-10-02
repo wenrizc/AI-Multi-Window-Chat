@@ -5,6 +5,15 @@ export type ChatRole = 'system' | 'user' | 'assistant';
 export type TransportType = 'chat_completions' | 'responses';
 
 export type ReasoningFormat = 'none' | 'openai_summary' | 'reasoning_content';
+export type ReasoningEffort = 'default' | 'none' | 'low' | 'medium' | 'high' | 'max' | (string & {});
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  status: 'ready' | 'parsing' | 'error';
+}
 
 /**
  * How the provider request is authenticated.
@@ -37,6 +46,7 @@ export interface ModelConfig {
 }
 
 export interface GenerationParams {
+  reasoningEffort?: ReasoningEffort;
   temperature: number | null;
 }
 
@@ -157,8 +167,10 @@ export const STORAGE_SCHEMA_VERSION = 5 as const;
 
 export interface ChatRequestMessage {
   role: ChatRole;
-  content: string;
+  content: string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
 }
+
+export type ProviderContent = ChatRequestMessage['content'];
 
 export interface ToolDefinition {
   type: 'function';
@@ -175,7 +187,7 @@ export interface ToolCall {
 
 export interface AssistantToolCallMessage {
   role: 'assistant';
-  content: string;
+  content: ProviderContent;
   reasoningContent?: string | null;
   toolCalls: ToolCall[];
 }
@@ -215,6 +227,8 @@ export interface ChatRequest {
   messages: ChatRequestMessage[];
   generationParams: GenerationParams;
   streamingEnabled: boolean;
+  reasoningEffort?: ReasoningEffort;
+  attachments?: ChatAttachment[];
 }
 
 export interface LlmResponseSummary {

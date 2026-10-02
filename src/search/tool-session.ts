@@ -1,6 +1,7 @@
 import { completeProviderTurn } from '../providers/openai-compatible';
 import { searchWithTavily } from './tavily';
 import type {
+  GenerationParams,
   AssistantToolCallMessage,
   ProviderConfig,
   ProviderMessage,
@@ -242,7 +243,7 @@ export async function runSearchToolSession(input: {
   messages: ProviderMessage[];
   requestId: string;
   searchSettings: SearchSettings;
-  generationParams: { temperature: number | null };
+  generationParams: GenerationParams;
   signal: AbortSignal;
   onEvent: (event: StreamEvent) => void;
 }): Promise<SearchToolSessionResult> {
