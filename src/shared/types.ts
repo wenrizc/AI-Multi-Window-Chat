@@ -41,7 +41,6 @@ export interface ModelConfig {
   modelId: string;
   displayName: string;
   supportsStreaming: boolean;
-  maxContextMessages: number | null;
   reasoningFormat: ReasoningFormat;
 }
 
@@ -136,7 +135,6 @@ export interface ChatSession {
   providerId: string | null;
   promptId: string | null;
   streamingOverride: boolean | null;
-  maxContextMessagesOverride: number | null;
   mode: ChatMode;
   messages: PersistedMessage[];
   totalUsage: UsageMetrics | null;
@@ -220,8 +218,6 @@ export interface ChatRequest {
   modelId: string;
   promptId: string | null;
   streamingOverride: boolean | null;
-  maxContextMessages: number | null;
-  maxContextMessagesOverride: number | null;
   userMessage: string;
   mode: ChatMode;
   messages: ChatRequestMessage[];

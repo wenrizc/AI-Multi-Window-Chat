@@ -177,9 +177,7 @@ describe('initialization', () => {
     expect(store.featureSettings.search.enabledByDefault).toBe(false);
     expect(store.providers[0].authMode).toBe('bearer');
     expect(store.providers[0].modelCatalog[0].supportsStreaming).toBe(true);
-    expect(store.providers[0].modelCatalog[0].maxContextMessages).toBeNull();
     expect(store.chatHistory[0].streamingOverride).toBeNull();
-    expect(store.chatHistory[0].maxContextMessagesOverride).toBeNull();
 
     // The repaired values must be written back, not only returned.
     expect(readMeta(state).featureSettings.defaultStreaming).toBe(false);

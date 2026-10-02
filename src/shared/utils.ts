@@ -40,14 +40,6 @@ export function toNullableInt(value: unknown): number | null {
   return normalized >= 0 ? normalized : null;
 }
 
-export function normalizeMaxContextMessages(value: unknown): number | null {
-  const parsed = toNullableInt(value);
-  if (parsed === null || parsed === 0) {
-    return null;
-  }
-  return parsed;
-}
-
 export function compactText(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -172,14 +164,6 @@ export function getModel(provider: ProviderConfig, modelId?: string | null): Mod
     provider.modelCatalog[0] ??
     null
   );
-}
-
-export function sliceMessageWindow<T>(messages: T[], maxContextMessages: number | null | undefined): T[] {
-  const limit = normalizeMaxContextMessages(maxContextMessages);
-  if (limit === null) {
-    return [...messages];
-  }
-  return messages.slice(-limit);
 }
 
 export function clampSearchRounds(value: number | null | undefined): number {

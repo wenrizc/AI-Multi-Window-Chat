@@ -141,10 +141,6 @@ export function normalizeConfig(config: StorageConfig): { config: StorageConfig;
         model.supportsStreaming = true;
         changed = true;
       }
-      if (model.maxContextMessages === undefined) {
-        model.maxContextMessages = null;
-        changed = true;
-      }
     }
   }
 
@@ -270,9 +266,6 @@ export function normalizeSession(raw: unknown): ChatSession | null {
     providerId: typeof session.providerId === 'string' ? session.providerId : null,
     promptId: typeof session.promptId === 'string' ? session.promptId : null,
     streamingOverride: typeof session.streamingOverride === 'boolean' ? session.streamingOverride : null,
-    maxContextMessagesOverride: typeof session.maxContextMessagesOverride === 'number' && Number.isFinite(session.maxContextMessagesOverride)
-      ? Math.max(1, Math.floor(session.maxContextMessagesOverride))
-      : null,
     mode: session.mode === 'search' ? 'search' : 'chat',
     messages,
     totalUsage: normalizeUsage(session.totalUsage),

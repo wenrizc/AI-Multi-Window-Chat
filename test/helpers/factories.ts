@@ -29,7 +29,6 @@ export function createProvider(input: Partial<ProviderConfig> = {}): ProviderCon
         modelId: 'test-model',
         displayName: 'Test Model',
         supportsStreaming: true,
-        maxContextMessages: null,
         reasoningFormat: 'none'
       }
     ],
@@ -44,7 +43,6 @@ export function createModel(input: Partial<ModelConfig> = {}): ModelConfig {
     modelId: 'test-model',
     displayName: 'Test Model',
     supportsStreaming: true,
-    maxContextMessages: null,
     reasoningFormat: 'none',
     ...input
   };
@@ -136,7 +134,6 @@ export function createChatSession(input: Partial<ChatSession> = {}): ChatSession
     providerId: 'provider-test',
     promptId: null,
     streamingOverride: null,
-    maxContextMessagesOverride: null,
     mode: 'chat',
     messages: [],
     totalUsage: null,
@@ -155,8 +152,6 @@ export function createChatRequest(input: Partial<ChatRequest> = {}): ChatRequest
     modelId: 'test-model',
     promptId: null,
     streamingOverride: null,
-    maxContextMessages: null,
-    maxContextMessagesOverride: null,
     userMessage: 'hello',
     mode: 'chat',
     messages: [{ role: 'user', content: 'hello' }],

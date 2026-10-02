@@ -589,14 +589,6 @@
     "message": "开启流式响应",
     "description": "模型级流式响应开关"
   },
-  "popup__labelMaxContextMessages": {
-    "message": "最长会话长度",
-    "description": "模型级上下文窗口长度标签"
-  },
-  "popup__maxContextMessagesPlaceholder": {
-    "message": "留空表示完整历史",
-    "description": "模型级上下文窗口占位文案"
-  },
   "popup__labelDefaultTemperature": {
     "message": "默认温度",
     "description": "默认温度标签"
@@ -734,17 +726,9 @@
     "message": "响应",
     "description": "聊天设置面板中的流式响应标签"
   },
-  "chat__settingsContextWindow": {
-    "message": "会话窗口",
-    "description": "聊天设置面板中的会话上下文窗口标签"
-  },
   "chat__streamingToggle": {
     "message": "流式响应",
     "description": "聊天设置面板中的流式响应开关文案"
-  },
-  "chat__maxContextMessagesPlaceholder": {
-    "message": "留空表示完整历史",
-    "description": "聊天设置面板中的会话上下文窗口占位文案"
   },
   "chat__toolCalls": {
     "message": "工具调用",

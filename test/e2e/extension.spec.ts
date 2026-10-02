@@ -37,7 +37,6 @@ function buildStore(baseUrl: string) {
             modelId: 'aimock-model',
             displayName: 'Aimock Model',
             supportsStreaming: false,
-            maxContextMessages: null,
             reasoningFormat: 'none'
           }
         ],

@@ -12,9 +12,7 @@ import {
   isDeepSeekModelId,
   mergeUsage,
   normalizeBaseUrl,
-  normalizeMaxContextMessages,
   resolveReasoningFormat,
-  sliceMessageWindow,
   toNullableInt,
   toNullableNumber,
   uid,
@@ -55,29 +53,6 @@ describe('numeric normalization', () => {
     expect(toNullableInt('')).toBeNull();
   });
 
-  it('treats zero and blanks as "no context window"', () => {
-    expect(normalizeMaxContextMessages('')).toBeNull();
-    expect(normalizeMaxContextMessages(0)).toBeNull();
-    expect(normalizeMaxContextMessages('6')).toBe(6);
-  });
-});
-
-describe('sliceMessageWindow', () => {
-  it('returns a copy when no limit is configured', () => {
-    const input = [1, 2, 3, 4];
-    const output = sliceMessageWindow(input, null);
-    expect(output).toEqual([1, 2, 3, 4]);
-    expect(output).not.toBe(input);
-  });
-
-  it('keeps only the most recent messages', () => {
-    expect(sliceMessageWindow([1, 2, 3, 4], 2)).toEqual([3, 4]);
-  });
-
-  it('ignores zero or blank limits', () => {
-    expect(sliceMessageWindow([1, 2, 3], 0)).toEqual([1, 2, 3]);
-    expect(sliceMessageWindow([1, 2, 3], '' as unknown as number)).toEqual([1, 2, 3]);
-  });
 });
 
 describe('clampSearchRounds', () => {

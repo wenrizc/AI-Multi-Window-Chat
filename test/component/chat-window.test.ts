@@ -197,7 +197,6 @@ describe('chat window settings', () => {
                 modelId: 'test-model',
                 displayName: 'Test Model',
                 supportsStreaming: false,
-                maxContextMessages: null,
                 reasoningFormat: 'none'
               }
             ]

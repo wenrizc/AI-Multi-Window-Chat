@@ -16,9 +16,7 @@ import {
   escapeHtml,
   formatUsageLabel,
   getModel,
-  normalizeMaxContextMessages,
   nowIso,
-  sliceMessageWindow,
   uid,
   writeTextToClipboard
 } from '../shared/utils';
@@ -96,8 +94,6 @@ class ChatWindowApp {
   private settingsOpen = false;
   private streamingEnabled = true;
   private streamingOverride: boolean | null = null;
-  private maxContextMessages: number | null = null;
-  private maxContextMessagesOverride: number | null = null;
   private reasoningEffort: ReasoningEffort = 'default';
   private customEfforts: string[] = [];
   private attachments: ChatAttachment[] = [];
@@ -213,7 +209,6 @@ class ChatWindowApp {
     profileId?: string | null;
     promptId?: string | null;
     streamingOverride?: boolean | null;
-    maxContextMessagesOverride?: number | null;
     historyMessages?: PersistedMessage[];
     initialMessage?: string;
   }) {
@@ -224,7 +219,6 @@ class ChatWindowApp {
     if ('streamingOverride' in payload) {
       this.streamingOverride = payload.streamingOverride ?? null;
     }
-    this.maxContextMessagesOverride = null;
 
     if (Array.isArray(payload.historyMessages) && payload.historyMessages.length > 0) {
       this.messages = payload.historyMessages;
@@ -561,17 +555,11 @@ class ChatWindowApp {
   private syncSessionSettingsFromModel() {
     const model = this.getCurrentModel();
     const modelStreaming = model?.supportsStreaming ?? true;
-    const modelMaxContextMessages = model?.maxContextMessages ?? null;
 
     if (this.streamingOverride !== null && this.streamingOverride === modelStreaming) {
       this.streamingOverride = null;
     }
-    if (this.maxContextMessagesOverride !== null && this.maxContextMessagesOverride === modelMaxContextMessages) {
-      this.maxContextMessagesOverride = null;
-    }
-
     this.streamingEnabled = this.streamingOverride ?? modelStreaming;
-    this.maxContextMessages = this.maxContextMessagesOverride ?? modelMaxContextMessages;
     this.elements.streamingToggle.checked = this.streamingEnabled;
   }
 
@@ -815,13 +803,7 @@ class ChatWindowApp {
 
       const requestMessages = [
         ...(prompt?.content ? [{ role: 'system' as const, content: prompt.content }] : []),
-        ...sliceMessageWindow(
-          this.messages.map((message) => ({
-            role: message.role,
-            content: message.content
-          })),
-          this.maxContextMessages
-        )
+        ...this.messages.map((message) => ({ role: message.role, content: message.content }))
       ];
 
       const request: ChatRequest = {
@@ -832,8 +814,6 @@ class ChatWindowApp {
         modelId: model.modelId,
         promptId: prompt?.id ?? null,
         streamingOverride: this.streamingOverride,
-        maxContextMessages: this.maxContextMessages,
-        maxContextMessagesOverride: this.maxContextMessagesOverride,
         userMessage: effectiveContent || t('chat__attachmentOnly'),
         mode: this.currentMode,
         messages: requestMessages,
@@ -855,8 +835,6 @@ class ChatWindowApp {
         modelId: request.modelId,
         promptId: request.promptId,
         streamingOverride: request.streamingOverride,
-        maxContextMessages: request.maxContextMessages,
-        maxContextMessagesOverride: request.maxContextMessagesOverride,
         userMessage: request.userMessage,
         mode: request.mode,
         messages: request.messages,

@@ -589,14 +589,6 @@
     "message": "Enable Streaming",
     "description": "Per-model streaming enabled checkbox"
   },
-  "popup__labelMaxContextMessages": {
-    "message": "Max Context Messages",
-    "description": "Per-model context window size label"
-  },
-  "popup__maxContextMessagesPlaceholder": {
-    "message": "Empty for full history",
-    "description": "Per-model context window placeholder"
-  },
   "popup__labelDefaultTemperature": {
     "message": "Default Temperature",
     "description": "Default temperature label"
@@ -734,17 +726,9 @@
     "message": "Response",
     "description": "Label for streaming toggle in chat settings panel"
   },
-  "chat__settingsContextWindow": {
-    "message": "Context Window",
-    "description": "Label for session context window input in chat settings panel"
-  },
   "chat__streamingToggle": {
     "message": "Streaming",
     "description": "Streaming toggle text in chat settings panel"
-  },
-  "chat__maxContextMessagesPlaceholder": {
-    "message": "Empty for full history",
-    "description": "Session context window placeholder in chat settings panel"
   },
   "chat__toolCalls": {
     "message": "Tool Calls",

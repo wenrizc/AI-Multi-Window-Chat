@@ -21,7 +21,6 @@ import {
   escapeHtml,
   isValidHeaderName,
   normalizeCustomHeaders,
-  normalizeMaxContextMessages,
   nowIso,
   resolveReasoningFormat,
   toNullableInt,
@@ -99,7 +98,6 @@ const elements = {
   transportSelect: document.getElementById('transportSelect') as HTMLSelectElement,
   reasoningFormatSelect: document.getElementById('reasoningFormatSelect') as HTMLSelectElement,
   supportsStreamingCheckbox: document.getElementById('supportsStreamingCheckbox') as HTMLInputElement,
-  maxContextMessagesInput: document.getElementById('maxContextMessagesInput') as HTMLInputElement,
   temperatureInput: document.getElementById('temperatureInput') as HTMLInputElement,
   tavilyApiKey: document.getElementById('tavilyApiKey') as HTMLInputElement,
   searchDepthSelect: document.getElementById('searchDepthSelect') as HTMLSelectElement,
@@ -334,7 +332,6 @@ class PopupApp {
     elements.transportSelect.value = preset.transport;
     elements.reasoningFormatSelect.value = preset.reasoningFormat;
     elements.supportsStreamingCheckbox.checked = true;
-    elements.maxContextMessagesInput.value = '';
     elements.temperatureInput.value = '';
   }
 
@@ -396,7 +393,6 @@ class PopupApp {
           modelId,
           displayName: modelId,
           supportsStreaming: true,
-          maxContextMessages: null,
           reasoningFormat: preset.reasoningFormat
         }
       ],
@@ -472,9 +468,6 @@ class PopupApp {
         if (typeof model.supportsStreaming !== 'boolean') {
           model.supportsStreaming = true;
         }
-        if (model.maxContextMessages === undefined) {
-          model.maxContextMessages = null;
-        }
       });
     });
   }
@@ -524,9 +517,6 @@ class PopupApp {
     elements.transportSelect.value = provider.transport;
     elements.reasoningFormatSelect.value = model?.reasoningFormat ?? 'none';
     elements.supportsStreamingCheckbox.checked = model?.supportsStreaming ?? true;
-    elements.maxContextMessagesInput.value = model?.maxContextMessages === null || model?.maxContextMessages === undefined
-      ? ''
-      : String(model.maxContextMessages);
     elements.temperatureInput.value = provider.defaultGenerationParams.temperature?.toString() ?? '';
   }
 
@@ -536,7 +526,6 @@ class PopupApp {
       elements.apiUrl,
       elements.apiKey,
       elements.modelName,
-      elements.maxContextMessagesInput,
       elements.temperatureInput
     ].forEach((input) => { input.value = ''; });
     elements.transportSelect.value = 'chat_completions';
@@ -655,7 +644,6 @@ class PopupApp {
           modelId: '',
           displayName: '',
           supportsStreaming: true,
-          maxContextMessages: null,
           reasoningFormat: 'none'
         }
       ],
@@ -696,7 +684,6 @@ class PopupApp {
           modelId: elements.modelName.value.trim(),
           displayName: elements.modelName.value.trim(),
           supportsStreaming: elements.supportsStreamingCheckbox.checked,
-          maxContextMessages: normalizeMaxContextMessages(elements.maxContextMessagesInput.value),
           reasoningFormat: resolveReasoningFormat(elements.reasoningFormatSelect.value)
         }
       ],

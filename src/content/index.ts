@@ -391,7 +391,6 @@ class AIMultiWindow {
           profileId: chat?.providerId ?? null,
           promptId: chat?.promptId ?? null,
           streamingOverride: chat?.streamingOverride ?? null,
-          maxContextMessagesOverride: chat?.maxContextMessagesOverride ?? null,
           historyMessages: chat?.messages ?? null,
           initialMessage
         },
