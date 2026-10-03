@@ -2,13 +2,15 @@ import { streamProviderResponse, testProviderConnection } from '../providers/ope
 import { runSearchToolSession } from '../search/tool-session';
 import { PORT_NAME } from '../shared/constants';
 import { getChatSession, getConfig, updateChatSession, upsertChatSession } from '../shared/storage';
+import { resolveActivePath } from '../shared/conversation-tree';
 import { classifyError, type FailureCode } from '../shared/errors';
 import type {
   ChatRequest,
   ChatRequestMessage,
   PersistedMessage,
   ProviderConfig,
-  StreamEvent
+  StreamEvent,
+  UsageMetrics
 } from '../shared/types';
 import {
   compactText,
@@ -31,7 +33,25 @@ function post(port: chrome.runtime.Port, event: StreamEvent) {
   }
 }
 
+/** Token totals summed over the messages actually visible in the active branch. */
+function sumActiveUsage(messages: PersistedMessage[], activeLeafId: string | null): UsageMetrics | null {
+  return resolveActivePath(messages, activeLeafId).reduce<UsageMetrics | null>((acc, message) => {
+    if (!message.tokenUsage) {
+      return acc;
+    }
+    return {
+      inputTokens: (acc?.inputTokens ?? 0) + (message.tokenUsage.inputTokens ?? 0),
+      outputTokens: (acc?.outputTokens ?? 0) + (message.tokenUsage.outputTokens ?? 0),
+      reasoningTokens: (acc?.reasoningTokens ?? 0) + (message.tokenUsage.reasoningTokens ?? 0),
+      cacheReadTokens: (acc?.cacheReadTokens ?? 0) + (message.tokenUsage.cacheReadTokens ?? 0),
+      totalTokens: (acc?.totalTokens ?? 0) + (message.tokenUsage.totalTokens ?? 0)
+    };
+  }, null);
+}
+
 function createPersistedMessage(input: {
+  id?: string;
+  parentId?: string | null;
   role: PersistedMessage['role'];
   content: string;
   mode: PersistedMessage['mode'];
@@ -45,9 +65,10 @@ function createPersistedMessage(input: {
   searchMeta?: PersistedMessage['searchMeta'];
 }): PersistedMessage {
   return {
-    id: uid('msg'),
+    id: input.id ?? uid('msg'),
     role: input.role,
     content: input.content,
+    parentId: input.parentId ?? null,
     reasoningSummary: input.reasoningSummary ?? null,
     toolCalls: input.toolCalls ?? [],
     sources: input.sources ?? [],
@@ -75,24 +96,49 @@ async function persistConversation(input: {
   const updatedAt = nowIso();
   const previousMessages = existing?.messages ?? [];
 
-  // A retry re-sends the same user message that was already persisted when the
-  // first attempt failed; only append it when the tail does not already match.
-  const lastMessage = previousMessages[previousMessages.length - 1];
-  const alreadyPersistedUser =
-    lastMessage?.role === 'user' && lastMessage.content === input.request.userMessage;
+  const appendUserMessage = input.request.appendUserMessage !== false;
+  const userMessageId = input.request.userMessageId ?? uid('msg');
+  const assistantMessageId = input.request.assistantMessageId ?? uid('msg');
+  // New senders always pass a parent (possibly null for a root). Legacy senders
+  // omit it, so attach to the current active leaf to keep the chain connected.
+  const parentMessageId = input.request.parentMessageId !== undefined
+    ? input.request.parentMessageId
+    : (existing?.activeLeafId ?? null);
 
-  const userMessages = alreadyPersistedUser
-    ? []
-    : [createPersistedMessage({
-        role: 'user',
-        content: input.request.userMessage,
-        mode: input.request.mode,
-        providerId: input.request.providerId,
-        modelId: input.request.modelId,
-        promptId: input.request.promptId
-      })];
+  const lastMessage = previousMessages[previousMessages.length - 1];
+  const existingUserById = previousMessages.find((message) => message.id === userMessageId);
+
+  // A retry (or an edit that reuses the same id) already persisted this user
+  // message; legacy senders without ids still dedupe on identical trailing text.
+  let effectiveUserId = userMessageId;
+  let userMessages: PersistedMessage[] = [];
+  if (!appendUserMessage) {
+    // Regenerating an assistant message: no new user turn.
+    effectiveUserId = parentMessageId ?? userMessageId;
+  } else if (existingUserById) {
+    effectiveUserId = existingUserById.id;
+  } else if (
+    !input.request.userMessageId &&
+    lastMessage?.role === 'user' &&
+    lastMessage.content === input.request.userMessage
+  ) {
+    effectiveUserId = lastMessage.id;
+  } else {
+    userMessages = [createPersistedMessage({
+      id: userMessageId,
+      parentId: parentMessageId,
+      role: 'user',
+      content: input.request.userMessage,
+      mode: input.request.mode,
+      providerId: input.request.providerId,
+      modelId: input.request.modelId,
+      promptId: input.request.promptId
+    })];
+  }
 
   const assistantMessage = createPersistedMessage({
+    id: assistantMessageId,
+    parentId: effectiveUserId,
     role: 'assistant',
     content: input.assistantContent,
     mode: input.request.mode,
@@ -107,19 +153,7 @@ async function persistConversation(input: {
   });
 
   const messages: PersistedMessage[] = [...previousMessages, ...userMessages, assistantMessage];
-
-  const totalUsage = messages.reduce<PersistedMessage['tokenUsage']>((acc, message) => {
-    if (!message.tokenUsage) {
-      return acc;
-    }
-    return {
-      inputTokens: (acc?.inputTokens ?? 0) + (message.tokenUsage.inputTokens ?? 0),
-      outputTokens: (acc?.outputTokens ?? 0) + (message.tokenUsage.outputTokens ?? 0),
-      reasoningTokens: (acc?.reasoningTokens ?? 0) + (message.tokenUsage.reasoningTokens ?? 0),
-      cacheReadTokens: (acc?.cacheReadTokens ?? 0) + (message.tokenUsage.cacheReadTokens ?? 0),
-      totalTokens: (acc?.totalTokens ?? 0) + (message.tokenUsage.totalTokens ?? 0)
-    };
-  }, null);
+  const activeLeafId = assistantMessage.id;
 
   const session = {
     chatId: input.request.chatId,
@@ -129,7 +163,9 @@ async function persistConversation(input: {
     streamingOverride: input.request.streamingOverride,
     mode: input.request.mode,
     messages,
-    totalUsage,
+    activeLeafId,
+    branchOf: existing?.branchOf ?? null,
+    totalUsage: sumActiveUsage(messages, activeLeafId),
     createdAt,
     updatedAt
   };
@@ -138,15 +174,29 @@ async function persistConversation(input: {
 }
 
 async function persistUserMessage(request: ChatRequest) {
+  // A failed regeneration has no new user turn to save; the active leaf is kept.
+  if (request.appendUserMessage === false) {
+    return;
+  }
+
   const existing = await getChatSession(request.chatId);
+  const userMessageId = request.userMessageId ?? uid('msg');
   const lastMessage = existing?.messages[existing.messages.length - 1];
-  if (lastMessage?.role === 'user' && lastMessage.content === request.userMessage) {
+  const alreadyPersisted = existing?.messages.some((message) => message.id === userMessageId)
+    || (!request.userMessageId
+      && lastMessage?.role === 'user'
+      && lastMessage.content === request.userMessage);
+  if (alreadyPersisted) {
     return;
   }
 
   const createdAt = existing?.createdAt ?? nowIso();
   const updatedAt = nowIso();
   const userMessage = createPersistedMessage({
+    id: userMessageId,
+    parentId: request.parentMessageId !== undefined
+      ? request.parentMessageId
+      : (existing?.activeLeafId ?? null),
     role: 'user',
     content: request.userMessage,
     mode: request.mode,
@@ -155,6 +205,7 @@ async function persistUserMessage(request: ChatRequest) {
     promptId: request.promptId
   });
 
+  const messages = existing ? [...existing.messages, userMessage] : [userMessage];
   await upsertChatSession({
     chatId: request.chatId,
     title: existing?.title || request.windowTitle || compactText(request.userMessage)?.slice(0, 60) || i18nMessage('common__newChat'),
@@ -162,7 +213,9 @@ async function persistUserMessage(request: ChatRequest) {
     promptId: request.promptId,
     streamingOverride: request.streamingOverride,
     mode: request.mode,
-    messages: existing ? [...existing.messages, userMessage] : [userMessage],
+    messages,
+    activeLeafId: userMessage.id,
+    branchOf: existing?.branchOf ?? null,
     totalUsage: existing?.totalUsage ?? null,
     createdAt,
     updatedAt
@@ -412,7 +465,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'TEST_PROVIDER') {
     testProviderConnection(message.provider as ProviderConfig)
       .then(() => sendResponse({ success: true }))
@@ -424,6 +477,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) }));
     return true;
+  }
+  if (message?.type === 'SET_ACTIVE_LEAF' && typeof message.chatId === 'string' && typeof message.leafId === 'string') {
+    updateChatSession(message.chatId, (session) => {
+      session.activeLeafId = message.leafId;
+      return session;
+    })
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+  if (message?.type === 'BRANCH_CHAT_WINDOW' && message.chat && typeof message.chat.chatId === 'string') {
+    // Forward a branched session to the content script of the tab that owns the
+    // iframe so it can open an in-page window, reusing OPEN_CHAT_WINDOW.
+    const tabId = sender?.tab?.id;
+    if (typeof tabId === 'number') {
+      chrome.tabs.sendMessage(tabId, { type: 'OPEN_CHAT_WINDOW', chat: message.chat })
+        .then(() => sendResponse({ success: true }))
+        .catch((error) => sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) }));
+      return true;
+    }
+    sendResponse({ success: false, error: 'No tab is associated with the branch request.' });
+    return false;
   }
   return false;
 });

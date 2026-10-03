@@ -19,7 +19,7 @@ import type {
 } from '../../src/shared/types';
 import { chatSessionKey } from '../../src/shared/storage';
 import { getChromeState, type PortMock } from '../helpers/chrome-mock';
-import { createChatRequest, createChatSession, createFeatureSettings, createProvider, TEST_BASE_URL } from '../helpers/factories';
+import { createChatRequest, createChatSession, createFeatureSettings, createPersistedMessage, createProvider, TEST_BASE_URL } from '../helpers/factories';
 import { byteSse, deferred, llmTurn, scriptedLlm, type Transport } from '../helpers/llm-mock';
 
 const server = setupServer();
@@ -232,6 +232,120 @@ describe('background chat streaming', () => {
     const session = currentStore().chatHistory[0];
     expect(session.messages.map((message) => message.role)).toEqual(['user']);
   });
+
+  it('persists client-generated ids as a tree and only counts the active branch in totalUsage', async () => {
+    seedStore({ providers: [createProvider()] });
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, () =>
+        HttpResponse.json({
+          choices: [{ message: { content: 'First answer.' } }],
+          usage: { prompt_tokens: 2, completion_tokens: 5, total_tokens: 7 }
+        })
+      )
+    );
+
+    const port = connect();
+    port.emit({
+      type: 'start_chat',
+      payload: createChatRequest({
+        requestId: 'req-tree-send',
+        chatId: 'tree',
+        userMessageId: 'u1',
+        assistantMessageId: 'a1',
+        parentMessageId: null,
+        appendUserMessage: true,
+        purpose: 'send'
+      })
+    });
+    await waitForEvent(port, (event) => event.type === 'completed');
+
+    let session = currentStore().chatHistory[0];
+    expect(session.messages.map((message) => [message.id, message.role, message.parentId])).toEqual([
+      ['u1', 'user', null],
+      ['a1', 'assistant', 'u1']
+    ]);
+    expect(session.activeLeafId).toBe('a1');
+    expect(session.totalUsage?.totalTokens).toBe(7);
+
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, () =>
+        HttpResponse.json({
+          choices: [{ message: { content: 'Second answer.' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 }
+        })
+      )
+    );
+    port.emit({
+      type: 'start_chat',
+      payload: createChatRequest({
+        requestId: 'req-tree-regenerate',
+        chatId: 'tree',
+        userMessageId: 'u1',
+        assistantMessageId: 'a2',
+        parentMessageId: 'u1',
+        appendUserMessage: false,
+        purpose: 'regenerate'
+      })
+    });
+    await waitForEvent(port, (event) => event.type === 'completed' && event.requestId === 'req-tree-regenerate');
+
+    session = currentStore().chatHistory[0];
+    expect(session.messages.map((message) => [message.id, message.parentId, message.content])).toEqual([
+      ['u1', null, 'hello'],
+      ['a1', 'u1', 'First answer.'],
+      ['a2', 'u1', 'Second answer.']
+    ]);
+    expect(session.activeLeafId).toBe('a2');
+    // u1 has no usage, so the branch totals 3 (a2) rather than 10 (a1 + a2).
+    expect(session.totalUsage?.totalTokens).toBe(3);
+  });
+
+  it('keeps an edited user turn attached to the original parent when the request fails', async () => {
+    seedStore({
+      providers: [createProvider()],
+      chatHistory: [createChatSession({
+        chatId: 'edit-tree',
+        activeLeafId: 'a2',
+        messages: [
+          createPersistedMessage({ id: 'u1', role: 'user', content: 'q1', parentId: null }),
+          createPersistedMessage({ id: 'a1', content: 'a1', parentId: 'u1' }),
+          createPersistedMessage({ id: 'u2', role: 'user', content: 'q2', parentId: 'a1' }),
+          createPersistedMessage({ id: 'a2', content: 'a2', parentId: 'u2' })
+        ]
+      })]
+    });
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, () =>
+        HttpResponse.json({ error: 'boom' }, { status: 500 })
+      )
+    );
+
+    const port = connect();
+    port.emit({
+      type: 'start_chat',
+      payload: createChatRequest({
+        requestId: 'req-edit-fail',
+        chatId: 'edit-tree',
+        userMessage: 'q2 edited',
+        userMessageId: 'u2e',
+        assistantMessageId: 'a2e',
+        parentMessageId: 'a1',
+        appendUserMessage: true,
+        purpose: 'edit'
+      })
+    });
+    await waitForEvent(port, (event) => event.type === 'failed');
+
+    const session = currentStore().chatHistory[0];
+    expect(session.messages.map((message) => [message.id, message.role, message.parentId])).toEqual([
+      ['u1', 'user', null],
+      ['a1', 'assistant', 'u1'],
+      ['u2', 'user', 'a1'],
+      ['a2', 'assistant', 'u2'],
+      ['u2e', 'user', 'a1']
+    ]);
+    expect(session.activeLeafId).toBe('u2e');
+  });
 });
 
 describe.each<Transport>(['chat_completions', 'responses'])('background %s lifecycle', transport => {
@@ -372,6 +486,56 @@ describe('background runtime messages', () => {
     expect(response).toEqual({ success: true });
     const session: ChatSession = currentStore().chatHistory[0];
     expect(session.title).toBe('Renamed session');
+  });
+
+  it('forwards a branched chat to the sender tab through BRANCH_CHAT_WINDOW', async () => {
+    const chat = createChatSession({ chatId: 'branch-1', title: 'Branched' });
+
+    const response = await state.dispatchRuntimeMessage(
+      { type: 'BRANCH_CHAT_WINDOW', chat },
+      { id: 'test-extension-id', tab: { id: 7 } }
+    );
+
+    expect(response).toEqual({ success: true });
+    expect(state.lastTabMessage()).toEqual({
+      tabId: 7,
+      message: { type: 'OPEN_CHAT_WINDOW', chat }
+    });
+  });
+
+  it('reports a missing tab for BRANCH_CHAT_WINDOW', async () => {
+    const response = await state.dispatchRuntimeMessage({
+      type: 'BRANCH_CHAT_WINDOW',
+      chat: createChatSession({ chatId: 'branch-2' })
+    });
+    expect(response).toEqual({ success: false, error: 'No tab is associated with the branch request.' });
+    expect(state.lastTabMessage()).toBeNull();
+  });
+
+  it('updates the active leaf through SET_ACTIVE_LEAF without changing updatedAt', async () => {
+    seedStore({
+      chatHistory: [createChatSession({
+        chatId: 'chat-test',
+        activeLeafId: 'a1',
+        updatedAt: '2030-01-01T00:00:00.000Z',
+        messages: [
+          createPersistedMessage({ id: 'u1', role: 'user', parentId: null }),
+          createPersistedMessage({ id: 'a1', parentId: 'u1' }),
+          createPersistedMessage({ id: 'a2', parentId: 'u1' })
+        ]
+      })]
+    });
+
+    const response = await state.dispatchRuntimeMessage({
+      type: 'SET_ACTIVE_LEAF',
+      chatId: 'chat-test',
+      leafId: 'a2'
+    });
+
+    expect(response).toEqual({ success: true });
+    const session = currentStore().chatHistory[0];
+    expect(session.activeLeafId).toBe('a2');
+    expect(session.updatedAt).toBe('2030-01-01T00:00:00.000Z');
   });
 
   it('ignores unrelated runtime messages', async () => {
