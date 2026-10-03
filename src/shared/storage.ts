@@ -233,6 +233,7 @@ function normalizeMessage(value: unknown, index: number): PersistedMessage | nul
     id: typeof value.id === 'string' && value.id ? value.id : `message-${index + 1}`,
     role,
     content: value.content,
+    parentId: typeof value.parentId === 'string' && value.parentId ? value.parentId : null,
     reasoningSummary: typeof value.reasoningSummary === 'string' ? value.reasoningSummary : null,
     toolCalls: normalizeToolCalls(value.toolCalls),
     sources: normalizeSources(value.sources),
@@ -243,6 +244,16 @@ function normalizeMessage(value: unknown, index: number): PersistedMessage | nul
     promptId: typeof value.promptId === 'string' ? value.promptId : null,
     searchMeta: normalizeSearchMeta(value.searchMeta),
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : nowIso()
+  };
+}
+
+function normalizeBranchOrigin(value: unknown): ChatSession['branchOf'] {
+  if (!isRecord(value) || typeof value.chatId !== 'string' || !value.chatId) {
+    return null;
+  }
+  return {
+    chatId: value.chatId,
+    messageId: typeof value.messageId === 'string' ? value.messageId : ''
   };
 }
 
@@ -260,6 +271,21 @@ export function normalizeSession(raw: unknown): ChatSession | null {
       .map((message, index) => normalizeMessage(message, index))
       .filter((message): message is PersistedMessage => message !== null)
     : [];
+
+  let activeLeafId = typeof session.activeLeafId === 'string' && session.activeLeafId
+    ? session.activeLeafId
+    : null;
+  if (!activeLeafId && messages.length > 0) {
+    // Legacy session without tree data: back-fill a linear parent chain so that
+    // active-path resolution keeps returning every message once branches exist.
+    let previousId: string | null = null;
+    for (const message of messages) {
+      message.parentId = previousId;
+      previousId = message.id;
+    }
+    activeLeafId = previousId;
+  }
+
   return {
     chatId: session.chatId,
     title: typeof session.title === 'string' && session.title ? session.title : session.chatId,
@@ -268,6 +294,8 @@ export function normalizeSession(raw: unknown): ChatSession | null {
     streamingOverride: typeof session.streamingOverride === 'boolean' ? session.streamingOverride : null,
     mode: session.mode === 'search' ? 'search' : 'chat',
     messages,
+    activeLeafId,
+    branchOf: normalizeBranchOrigin(session.branchOf),
     totalUsage: normalizeUsage(session.totalUsage),
     createdAt,
     updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : createdAt

@@ -79,6 +79,45 @@ describe('session normalization', () => {
     expect(session?.totalUsage?.inputTokens).toBe(12);
     expect(session?.totalUsage?.outputTokens).toBeNull();
   });
+
+  it('preserves explicit tree data', () => {
+    const session = normalizeSession({
+      chatId: 'chat-1',
+      activeLeafId: 'm2',
+      branchOf: { chatId: 'origin', messageId: 'root' },
+      messages: [
+        { id: 'm1', role: 'user', content: 'hi', parentId: null },
+        { id: 'm2', role: 'assistant', content: 'hello', parentId: 'm1' }
+      ]
+    });
+
+    expect(session?.activeLeafId).toBe('m2');
+    expect(session?.branchOf).toEqual({ chatId: 'origin', messageId: 'root' });
+    expect(session?.messages[1].parentId).toBe('m1');
+  });
+
+  it('back-fills a linear parent chain for legacy sessions', () => {
+    const session = normalizeSession({
+      chatId: 'legacy',
+      messages: [
+        { id: 'm1', role: 'user', content: 'hi' },
+        { id: 'm2', role: 'assistant', content: 'hello' }
+      ]
+    });
+
+    expect(session?.messages[0].parentId).toBeNull();
+    expect(session?.messages[1].parentId).toBe('m1');
+    expect(session?.activeLeafId).toBe('m2');
+  });
+
+  it('drops malformed branch origins', () => {
+    const session = normalizeSession({
+      chatId: 'chat-1',
+      branchOf: { messageId: 'only-message' },
+      messages: []
+    });
+    expect(session?.branchOf).toBeNull();
+  });
 });
 
 describe('initialization', () => {
