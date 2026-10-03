@@ -1,10 +1,13 @@
 import { PORT_NAME } from '../shared/constants';
-import { getConfig } from '../shared/storage';
+import { getConfig, upsertChatSession } from '../shared/storage';
+import { findLatestLeafUnder, getSiblingInfo, resolveActivePath } from '../shared/conversation-tree';
 import type { FailureCode } from '../shared/errors';
 import type {
+  ChatMode,
   ChatRequest,
   ChatSession,
   FeatureSettings,
+  ModelConfig,
   PersistedMessage,
   PromptConfig,
   ProviderConfig,
@@ -43,6 +46,29 @@ const COPIED_ICON_SVG = `
     <path d="m5 12 4 4L19 6"></path>
   </svg>
 `;
+const BRANCH_ICON_SVG = `
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M6 3v6a4 4 0 0 0 4 4h4"></path>
+    <path d="M14 3v18"></path>
+    <path d="m17 16 3 3-3 3"></path>
+  </svg>
+`;
+const EDIT_ICON_SVG = `
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 20h9"></path>
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+  </svg>
+`;
+const REGENERATE_ICON_SVG = `
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"></path>
+    <path d="M21 3v5h-5"></path>
+    <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"></path>
+    <path d="M3 21v-5h5"></path>
+  </svg>
+`;
+
+type MessagePurpose = 'send' | 'edit' | 'regenerate';
 
 type ComposerStatusVariant = 'busy' | 'success' | 'warning' | 'error';
 
@@ -113,6 +139,15 @@ class ChatWindowApp {
   private retryTemplate: Omit<ChatRequest, 'requestId'> | null = null;
   private retryAttempts = 0;
   private userPinnedToBottom = true;
+
+  /** Conversation-tree state (see shared/conversation-tree.ts). */
+  private activeLeafId: string | null = null;
+  private currentUserMessageId: string | null = null;
+  private currentAssistantMessageId: string | null = null;
+  private currentProviderId: string | null = null;
+  private currentPromptId: string | null = null;
+  private currentPurpose: MessagePurpose = 'send';
+  private previousActiveLeafId: string | null = null;
 
   private elements = {
     messagesContainer: document.getElementById('messagesContainer') as HTMLElement,
@@ -210,6 +245,7 @@ class ChatWindowApp {
     promptId?: string | null;
     streamingOverride?: boolean | null;
     historyMessages?: PersistedMessage[];
+    activeLeafId?: string | null;
     initialMessage?: string;
   }) {
     this.chatId = payload.chatId || this.chatId;
@@ -222,6 +258,19 @@ class ChatWindowApp {
 
     if (Array.isArray(payload.historyMessages) && payload.historyMessages.length > 0) {
       this.messages = payload.historyMessages;
+      const hasTreeData = this.messages.some((message) => message.parentId !== undefined);
+      if (payload.activeLeafId && hasTreeData) {
+        this.activeLeafId = payload.activeLeafId;
+      } else {
+        // Legacy/unstructured history: back-fill a linear chain so it renders in
+        // full and can still be branched or edited.
+        let previousId: string | null = null;
+        for (const message of this.messages) {
+          message.parentId = previousId;
+          previousId = message.id;
+        }
+        this.activeLeafId = previousId;
+      }
       this.renderHistory().catch((error) => {
         console.error(error);
       });
@@ -567,9 +616,13 @@ class ChatWindowApp {
     this.syncSessionSettingsFromModel();
   }
 
+  private getActivePath(): PersistedMessage[] {
+    return resolveActivePath(this.messages, this.activeLeafId);
+  }
+
   private async renderHistory() {
     this.elements.messagesContainer.innerHTML = '';
-    for (const message of this.messages) {
+    for (const message of this.getActivePath()) {
       this.elements.messagesContainer.appendChild(await this.createMessageNode(message));
     }
   }
@@ -577,11 +630,17 @@ class ChatWindowApp {
   private async createMessageNode(message: PersistedMessage): Promise<HTMLElement> {
     const wrapper = document.createElement('div');
     wrapper.className = `message message-${message.role}`;
+    wrapper.dataset.messageId = message.id;
 
     const header = document.createElement('div');
     header.className = 'message-header';
     header.innerHTML = `<span class="message-avatar">${message.role === 'user' ? '👤' : '🤖'}</span><span class="message-role">${message.role === 'user' ? escapeHtml(t('chat__roleUser')) : escapeHtml(t('chat__roleAI'))}</span>`;
     wrapper.appendChild(header);
+
+    const siblingInfo = getSiblingInfo(message, this.messages);
+    if (siblingInfo.total > 1) {
+      wrapper.appendChild(this.createVersionNavigator(message, siblingInfo.index + 1, siblingInfo.total));
+    }
 
     if (message.role === 'assistant' && message.reasoningSummary) {
       wrapper.appendChild(this.createReasoningBlock(message.reasoningSummary));
@@ -627,7 +686,76 @@ class ChatWindowApp {
       wrapper.appendChild(sources);
     }
 
+    wrapper.appendChild(this.createMessageActions(message));
+
     return wrapper;
+  }
+
+  private createVersionNavigator(message: PersistedMessage, position: number, total: number): HTMLElement {
+    const navigator = document.createElement('div');
+    navigator.className = 'message-versions';
+    const label = `${position}/${total}`;
+    navigator.innerHTML = `
+      <button type="button" class="message-version-btn" data-version-dir="-1" title="${escapeHtml(t('chat__versionPrev'))}" aria-label="${escapeHtml(t('chat__versionPrev'))}">‹</button>
+      <span class="message-version-label" aria-live="polite">${escapeHtml(label)}</span>
+      <button type="button" class="message-version-btn" data-version-dir="1" title="${escapeHtml(t('chat__versionNext'))}" aria-label="${escapeHtml(t('chat__versionNext'))}">›</button>
+    `;
+    navigator.querySelectorAll<HTMLButtonElement>('[data-version-dir]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const direction = Number(button.dataset.versionDir) || 0;
+        void this.switchVersion(message, direction);
+      });
+    });
+    return navigator;
+  }
+
+  private createMessageActions(message: PersistedMessage): HTMLElement {
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+
+    if (message.role === 'user') {
+      const editBtn = this.createActionButton('edit', t('chat__btnEdit'), EDIT_ICON_SVG);
+      editBtn.addEventListener('click', () => this.startEditMessage(message));
+      actions.appendChild(editBtn);
+    } else {
+      const regenerateBtn = this.createActionButton('regenerate', t('chat__btnRegenerate'), REGENERATE_ICON_SVG);
+      regenerateBtn.addEventListener('click', () => void this.regenerateMessage(message));
+      actions.appendChild(regenerateBtn);
+
+      if (this.providers.length > 0) {
+        const modelSelect = document.createElement('select');
+        modelSelect.className = 'message-model-select';
+        modelSelect.title = t('chat__btnRegenerateWithModel');
+        modelSelect.setAttribute('aria-label', t('chat__btnRegenerateWithModel'));
+        modelSelect.innerHTML = `<option value="">${escapeHtml(t('chat__btnRegenerateWithModel'))}</option>`
+          + this.providers.map((provider) => `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.name)}</option>`).join('');
+        modelSelect.addEventListener('change', () => {
+          const providerId = modelSelect.value || this.profileId;
+          modelSelect.value = '';
+          if (providerId) {
+            void this.regenerateMessage(message, providerId);
+          }
+        });
+        actions.appendChild(modelSelect);
+      }
+    }
+
+    const branchBtn = this.createActionButton('branch', t('chat__btnBranch'), BRANCH_ICON_SVG);
+    branchBtn.addEventListener('click', () => void this.branchFromMessage(message));
+    actions.appendChild(branchBtn);
+
+    return actions;
+  }
+
+  private createActionButton(action: string, label: string, icon: string): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `message-action-btn message-action-${action}`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.innerHTML = `${icon}<span>${escapeHtml(label)}</span>`;
+    return button;
   }
 
   private renderSources(container: HTMLElement, sources: PersistedMessage['sources']) {
@@ -650,16 +778,21 @@ class ChatWindowApp {
     });
   }
 
-  private async appendUserMessage(content: string) {
+  private async appendUserMessage(
+    content: string,
+    parentId: string | null,
+    mode: ChatMode = this.currentMode
+  ): Promise<PersistedMessage> {
     const message: PersistedMessage = {
       id: uid('msg'),
       role: 'user',
       content,
+      parentId,
       reasoningSummary: null,
       toolCalls: [],
       sources: [],
       tokenUsage: null,
-      mode: this.currentMode,
+      mode,
       providerId: this.profileId,
       modelId: null,
       promptId: this.promptId,
@@ -667,10 +800,9 @@ class ChatWindowApp {
       createdAt: nowIso()
     };
     this.messages.push(message);
+    this.activeLeafId = message.id;
     this.removeWelcomeMessage();
-    this.elements.messagesContainer.appendChild(await this.createMessageNode(message));
-    this.userPinnedToBottom = true;
-    this.scrollToBottom();
+    return message;
   }
 
   private createAssistantPlaceholder(): AssistantRenderState {
@@ -765,7 +897,8 @@ class ChatWindowApp {
       return;
     }
 
-    this.currentMode = this.elements.searchToggle.checked ? 'search' : 'chat';
+    const mode: ChatMode = this.elements.searchToggle.checked ? 'search' : 'chat';
+    this.currentMode = mode;
     const readyTextFiles = this.attachments.filter((a) => a.status === 'ready' && !a.mimeType.startsWith('image/'));
     const effectiveContent = [content, ...readyTextFiles.map((a) => {
       try {
@@ -775,14 +908,57 @@ class ChatWindowApp {
         return `\n[${a.name}]`;
       }
     })].filter(Boolean).join('\n').trim();
-    await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'));
+    const parentId = this.activeLeafId;
+    const userMessage = await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'), parentId, mode);
     this.elements.messageInput.value = '';
     const requestAttachments = this.attachments.filter((a) => a.status === 'ready' && a.mimeType.startsWith('image/'));
     this.attachments = [];
     this.renderAttachments();
     this.adjustTextareaHeight();
+    await this.renderHistory();
+
+    this.postChatRequest({
+      provider,
+      prompt,
+      model,
+      mode,
+      userMessage: userMessage.content,
+      userMessageId: userMessage.id,
+      parentMessageId: parentId,
+      appendUserMessage: true,
+      purpose: 'send',
+      attachments: requestAttachments
+    });
+  }
+
+  /**
+   * Shared request dispatch for send/edit/regenerate. The active path (including
+   * the freshly appended user turn) becomes the request history, and the local
+   * ids are sent along so background persistence mirrors this in-memory tree.
+   */
+  private postChatRequest(params: {
+    provider: ProviderConfig;
+    prompt: PromptConfig | null;
+    model: ModelConfig;
+    mode: ChatMode;
+    userMessage: string;
+    userMessageId: string;
+    parentMessageId: string | null;
+    appendUserMessage: boolean;
+    purpose: MessagePurpose;
+    attachments: ChatAttachment[];
+  }) {
     this.isLoading = true;
     this.currentRequestId = uid('req');
+    this.currentUserMessageId = params.userMessageId;
+    this.currentAssistantMessageId = uid('msg');
+    this.currentProviderId = params.provider.id;
+    this.currentPromptId = params.prompt?.id ?? null;
+    this.currentPurpose = params.purpose;
+    this.currentMode = params.mode;
+    this.currentModelId = params.model.modelId;
+    this.streamingEnabled = this.streamingOverride ?? params.model.supportsStreaming;
+
     this.currentAssistantState = this.createAssistantPlaceholder();
     this.currentAssistantText = '';
     this.currentReasoningText = '';
@@ -793,62 +969,290 @@ class ChatWindowApp {
     this.showLoading(true);
     this.setLocalizedComposerStatus('chat__statusGenerating', 'busy');
 
+    const requestId = this.currentRequestId;
+    if (!requestId) {
+      throw new Error(t('common__unknownError'));
+    }
+
+    const path = this.getActivePath();
+    const request: ChatRequest = {
+      requestId,
+      chatId: this.chatId,
+      windowTitle: this.windowTitle,
+      providerId: params.provider.id,
+      modelId: params.model.modelId,
+      promptId: params.prompt?.id ?? null,
+      streamingOverride: this.streamingOverride,
+      userMessage: params.userMessage,
+      mode: params.mode,
+      messages: [
+        ...(params.prompt?.content ? [{ role: 'system' as const, content: params.prompt.content }] : []),
+        ...path.map((message) => ({ role: message.role, content: message.content }))
+      ],
+      generationParams: params.provider.defaultGenerationParams,
+      streamingEnabled: this.streamingEnabled,
+      reasoningEffort: this.reasoningEffort,
+      attachments: params.attachments,
+      userMessageId: params.userMessageId,
+      assistantMessageId: this.currentAssistantMessageId,
+      parentMessageId: params.parentMessageId,
+      appendUserMessage: params.appendUserMessage,
+      purpose: params.purpose
+    };
+
     try {
-      this.syncSessionSettingsFromModel();
-      this.currentModelId = model.modelId;
-      const requestId = this.currentRequestId;
-      if (!requestId) {
-        throw new Error(t('common__unknownError'));
-      }
-
-      const requestMessages = [
-        ...(prompt?.content ? [{ role: 'system' as const, content: prompt.content }] : []),
-        ...this.messages.map((message) => ({ role: message.role, content: message.content }))
-      ];
-
-      const request: ChatRequest = {
-        requestId,
-        chatId: this.chatId,
-        windowTitle: this.windowTitle,
-        providerId: provider.id,
-        modelId: model.modelId,
-        promptId: prompt?.id ?? null,
-        streamingOverride: this.streamingOverride,
-        userMessage: effectiveContent || t('chat__attachmentOnly'),
-        mode: this.currentMode,
-        messages: requestMessages,
-        generationParams: provider.defaultGenerationParams,
-        streamingEnabled: this.streamingEnabled,
-        reasoningEffort: this.reasoningEffort,
-        attachments: requestAttachments
-      };
-
       this.port.postMessage({
         type: 'start_chat',
         payload: request
       });
+    } catch (error) {
+      // The runtime port can be gone (e.g. service worker restarted); recover the
+      // composer instead of leaving the placeholder stuck in a loading state.
+      console.error(error);
+      this.resetLoadingState();
+      this.renderHistory().catch((renderError) => console.error(renderError));
+      this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
+      return;
+    }
 
-      this.retryTemplate = {
-        chatId: request.chatId,
-        windowTitle: request.windowTitle,
-        providerId: request.providerId,
-        modelId: request.modelId,
-        promptId: request.promptId,
-        streamingOverride: request.streamingOverride,
-        userMessage: request.userMessage,
-        mode: request.mode,
-        messages: request.messages,
-        generationParams: request.generationParams,
-        streamingEnabled: request.streamingEnabled,
-        reasoningEffort: request.reasoningEffort,
-        attachments: request.attachments
-      };
+    this.retryTemplate = {
+      chatId: request.chatId,
+      windowTitle: request.windowTitle,
+      providerId: request.providerId,
+      modelId: request.modelId,
+      promptId: request.promptId,
+      streamingOverride: request.streamingOverride,
+      userMessage: request.userMessage,
+      mode: request.mode,
+      messages: request.messages,
+      generationParams: request.generationParams,
+      streamingEnabled: request.streamingEnabled,
+      reasoningEffort: request.reasoningEffort,
+      attachments: request.attachments,
+      userMessageId: request.userMessageId,
+      assistantMessageId: request.assistantMessageId,
+      parentMessageId: request.parentMessageId,
+      appendUserMessage: request.appendUserMessage,
+      purpose: request.purpose
+    };
+  }
+
+  /** Copies the active path up to `message` into a brand new branched session. */
+  private async branchFromMessage(message: PersistedMessage) {
+    if (this.isLoading) {
+      return;
+    }
+    const path = this.getActivePath();
+    const index = path.findIndex((item) => item.id === message.id);
+    if (index < 0) {
+      return;
+    }
+
+    const prefix = path.slice(0, index + 1);
+    const branchMessages: PersistedMessage[] = prefix.map((item) => ({
+      ...item,
+      id: uid('msg'),
+      parentId: null
+    }));
+    branchMessages.forEach((item, position) => {
+      item.parentId = position === 0 ? null : branchMessages[position - 1].id;
+    });
+
+    const titleBase = this.windowTitle || t('content__aiChat');
+    const session: ChatSession = {
+      chatId: uid('chat'),
+      title: `${titleBase} · ${t('chat__branchSuffix')}`,
+      providerId: this.profileId,
+      promptId: this.promptId,
+      streamingOverride: this.streamingOverride,
+      mode: prefix[prefix.length - 1]?.mode ?? 'chat',
+      messages: branchMessages,
+      activeLeafId: branchMessages[branchMessages.length - 1]?.id ?? null,
+      branchOf: { chatId: this.chatId, messageId: message.id },
+      totalUsage: null,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+
+    try {
+      await upsertChatSession(session);
     } catch (error) {
       console.error(error);
-      this.removeCurrentAssistantPlaceholder();
-      this.resetLoadingState();
-      this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
+      this.setLocalizedComposerStatus('chat__statusBranchFailed', 'error');
+      return;
     }
+
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'BRANCH_CHAT_WINDOW', chat: session });
+      if (response && typeof response === 'object' && (response as { success?: boolean }).success === false) {
+        this.setLocalizedComposerStatus('chat__statusBranchFailed', 'error');
+        return;
+      }
+      this.setLocalizedComposerStatus('chat__statusBranchOpened', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
+    } catch (error) {
+      console.error(error);
+      this.setLocalizedComposerStatus('chat__statusBranchFailed', 'error');
+    }
+  }
+
+  /** Opens an inline editor for a user message. */
+  private startEditMessage(message: PersistedMessage) {
+    if (this.isLoading) {
+      return;
+    }
+    const wrapper = this.elements.messagesContainer.querySelector<HTMLElement>(
+      `.message[data-message-id="${message.id}"]`
+    );
+    const content = wrapper?.querySelector<HTMLElement>('.message-content');
+    if (!wrapper || !content || wrapper.querySelector('.message-edit-editor')) {
+      return;
+    }
+
+    const editor = document.createElement('div');
+    editor.className = 'message-edit-editor';
+    editor.innerHTML = `
+      <textarea class="message-edit-input" rows="2"></textarea>
+      <div class="message-edit-actions">
+        <button type="button" class="message-edit-save">${escapeHtml(t('chat__btnSaveEdit'))}</button>
+        <button type="button" class="message-edit-cancel">${escapeHtml(t('chat__btnCancelEdit'))}</button>
+      </div>
+    `;
+    const textarea = editor.querySelector<HTMLTextAreaElement>('.message-edit-input');
+    if (!textarea) {
+      return;
+    }
+    textarea.value = message.content;
+    content.hidden = true;
+    content.after(editor);
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    const close = () => {
+      editor.remove();
+      content.hidden = false;
+    };
+    editor.querySelector('.message-edit-cancel')?.addEventListener('click', close);
+    editor.querySelector('.message-edit-save')?.addEventListener('click', () => {
+      const next = textarea.value.trim();
+      if (!next) {
+        textarea.focus();
+        return;
+      }
+      close();
+      void this.applyEdit(message, next);
+    });
+  }
+
+  /** Forks the conversation by replacing `target` with an edited sibling turn. */
+  private async applyEdit(target: PersistedMessage, newContent: string) {
+    const provider = this.providers.find((item) => item.id === this.profileId);
+    if (!provider) {
+      this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+      return;
+    }
+    const model = getModel(provider, provider.defaultModel);
+    if (!model?.modelId) {
+      this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
+      return;
+    }
+
+    this.hideRetryButton();
+    this.retryTemplate = null;
+    this.retryAttempts = 0;
+    this.clearComposerStatus();
+
+    const parentId = target.parentId ?? null;
+    this.currentMode = target.mode;
+    const userMessage = await this.appendUserMessage(newContent, parentId, target.mode);
+    await this.renderHistory();
+
+    this.postChatRequest({
+      provider,
+      prompt: this.resolvePrompt(target.promptId ?? this.promptId),
+      model,
+      mode: target.mode,
+      userMessage: newContent,
+      userMessageId: userMessage.id,
+      parentMessageId: parentId,
+      appendUserMessage: true,
+      purpose: 'edit',
+      attachments: []
+    });
+  }
+
+  /** Regenerates an assistant message, optionally using a different provider. */
+  private async regenerateMessage(target: PersistedMessage, providerId?: string | null) {
+    if (this.isLoading || target.role !== 'assistant') {
+      return;
+    }
+    const provider = this.providers.find((item) => item.id === (providerId || this.profileId));
+    if (!provider) {
+      this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+      return;
+    }
+    const model = getModel(provider, provider.defaultModel);
+    if (!model?.modelId) {
+      this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
+      return;
+    }
+
+    const parentId = target.parentId ?? null;
+    const userMessage = parentId ? this.messages.find((item) => item.id === parentId) : undefined;
+    if (!userMessage) {
+      this.setLocalizedComposerStatus('chat__statusRegenerateUnavailable', 'warning');
+      return;
+    }
+    if (target.mode === 'search' && !this.featureSettings?.search.tavilyApiKey.trim()) {
+      this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
+      return;
+    }
+
+    this.hideRetryButton();
+    this.retryTemplate = null;
+    this.retryAttempts = 0;
+    this.clearComposerStatus();
+
+    this.previousActiveLeafId = this.activeLeafId;
+    this.activeLeafId = parentId;
+    await this.renderHistory();
+
+    this.postChatRequest({
+      provider,
+      prompt: this.resolvePrompt(target.promptId ?? this.promptId),
+      model,
+      mode: target.mode,
+      userMessage: userMessage.content,
+      userMessageId: userMessage.id,
+      parentMessageId: parentId,
+      appendUserMessage: false,
+      purpose: 'regenerate',
+      attachments: []
+    });
+  }
+
+  private resolvePrompt(promptId: string | null): PromptConfig | null {
+    return promptId ? this.prompts.find((item) => item.id === promptId) ?? null : null;
+  }
+
+  /** Switches between sibling versions and shows the newest leaf under it. */
+  private async switchVersion(message: PersistedMessage, direction: number) {
+    if (this.isLoading) {
+      return;
+    }
+    const info = getSiblingInfo(message, this.messages);
+    if (info.total <= 1) {
+      return;
+    }
+    const nextIndex = (info.index + direction + info.total) % info.total;
+    const target = info.siblings[nextIndex];
+    const leafId = findLatestLeafUnder(target.id, this.messages) ?? target.id;
+    this.activeLeafId = leafId;
+    await this.renderHistory();
+    this.userPinnedToBottom = true;
+    this.scrollToBottom();
+    chrome.runtime.sendMessage({ type: 'SET_ACTIVE_LEAF', chatId: this.chatId, leafId }).catch((error) => {
+      console.error(error);
+    });
   }
 
   private abortCurrentRequest() {
@@ -914,18 +1318,27 @@ class ChatWindowApp {
         this.hideRetryButton();
         this.setLocalizedComposerStatus('chat__statusCompleted', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
-      case 'aborted':
+      case 'aborted': {
+        const purpose = this.currentPurpose;
         this.cancelScheduledRender();
-        this.removeCurrentAssistantPlaceholder();
         this.resetLoadingState();
+        if (purpose === 'regenerate' && this.previousActiveLeafId !== null) {
+          this.activeLeafId = this.previousActiveLeafId;
+        }
         this.hideRetryButton();
+        await this.renderHistory();
         this.setLocalizedComposerStatus('chat__statusStopped', 'success', COMPOSER_STATUS_AUTO_HIDE_MS);
         break;
+      }
       case 'failed': {
         console.error(event.error);
+        const purpose = this.currentPurpose;
         this.cancelScheduledRender();
-        this.removeCurrentAssistantPlaceholder();
         this.resetLoadingState();
+        if (purpose === 'regenerate' && this.previousActiveLeafId !== null) {
+          this.activeLeafId = this.previousActiveLeafId;
+        }
+        await this.renderHistory();
         this.setComposerStatus(this.formatChatFailure(event.error, event.code, event.status), 'error');
         const canRetry = Boolean(event.retryable && this.retryTemplate && this.retryAttempts < MAX_RETRY_ATTEMPTS);
         this.setRetryButtonVisible(canRetry);
@@ -946,46 +1359,34 @@ class ChatWindowApp {
   }) {
     this.cancelScheduledRender();
     this.renderSealed = true;
-    if (this.currentAssistantState) {
-      const rendered = await renderMarkdown(response.content);
-      this.currentAssistantState.content.innerHTML = rendered;
-      if (response.reasoningSummary) {
-        this.currentReasoningText = response.reasoningSummary;
-        this.currentAssistantState.reasoning.textContent = response.reasoningSummary;
-        this.updateCurrentReasoningVisibility();
-      } else {
-        this.currentAssistantState.reasoningWrap.style.display = 'none';
-      }
-      this.currentToolCalls = response.toolCalls;
-      this.renderToolCalls(
-        this.currentAssistantState.toolsWrap,
-        this.currentAssistantState.toolsBody,
-        response.toolCalls
-      );
-      this.setUsageFooter(this.currentAssistantState.footer, response.usage);
-    }
 
+    const assistantMessageId = this.currentAssistantMessageId ?? uid('msg');
+    const userMessageId = this.currentUserMessageId;
     const message: PersistedMessage = {
-      id: uid('msg'),
+      id: assistantMessageId,
       role: 'assistant',
       content: response.content,
+      parentId: userMessageId ?? null,
       reasoningSummary: response.reasoningSummary,
       toolCalls: response.toolCalls,
       sources: response.sources,
       tokenUsage: response.usage,
       mode: this.currentMode,
-      providerId: this.profileId,
+      providerId: this.currentProviderId ?? this.profileId,
       modelId: this.currentModelId,
-      promptId: this.promptId,
+      promptId: this.currentPromptId,
       searchMeta: response.searchMeta,
       createdAt: nowIso()
     };
-    this.messages.push(message);
-    this.resetLoadingState();
-  }
+    if (!this.messages.some((item) => item.id === message.id)) {
+      this.messages.push(message);
+    }
+    this.activeLeafId = message.id;
 
-  private removeCurrentAssistantPlaceholder() {
-    this.currentAssistantState?.container.remove();
+    this.resetLoadingState();
+    await this.renderHistory();
+    this.userPinnedToBottom = true;
+    this.scrollToBottom();
   }
 
   private resetLoadingState() {
@@ -998,6 +1399,11 @@ class ChatWindowApp {
     this.currentReasoningText = '';
     this.currentToolCalls = [];
     this.currentModelId = null;
+    this.currentUserMessageId = null;
+    this.currentAssistantMessageId = null;
+    this.currentProviderId = null;
+    this.currentPromptId = null;
+    this.currentPurpose = 'send';
     this.showLoading(false);
   }
 
@@ -1075,6 +1481,12 @@ class ChatWindowApp {
 
     this.isLoading = true;
     this.currentRequestId = uid('req');
+    this.currentUserMessageId = template.userMessageId ?? null;
+    this.currentAssistantMessageId = template.assistantMessageId ?? uid('msg');
+    this.currentProviderId = template.providerId;
+    this.currentPromptId = template.promptId ?? null;
+    this.currentPurpose = template.purpose ?? 'send';
+    this.currentModelId = template.modelId;
     this.currentAssistantState = this.createAssistantPlaceholder();
     this.currentAssistantText = '';
     this.currentReasoningText = '';
@@ -1089,7 +1501,8 @@ class ChatWindowApp {
       type: 'start_chat',
       payload: {
         ...template,
-        requestId: this.currentRequestId
+        requestId: this.currentRequestId,
+        assistantMessageId: this.currentAssistantMessageId
       }
     });
   }

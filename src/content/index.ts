@@ -392,6 +392,8 @@ class AIMultiWindow {
           promptId: chat?.promptId ?? null,
           streamingOverride: chat?.streamingOverride ?? null,
           historyMessages: chat?.messages ?? null,
+          activeLeafId: chat?.activeLeafId ?? null,
+          branchOf: chat?.branchOf ?? null,
           initialMessage
         },
         chrome.runtime.getURL('')

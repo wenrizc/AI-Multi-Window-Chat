@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import chatHtml from '../../chat-window.html?raw';
 import { STORAGE_KEY } from '../../src/shared/constants';
-import type { ChatRequest, PersistedMessage, RootStore, StreamEvent, UsageMetrics } from '../../src/shared/types';
+import { chatSessionKey } from '../../src/shared/storage';
+import type { ChatRequest, ChatSession, PersistedMessage, RootStore, StreamEvent, UsageMetrics } from '../../src/shared/types';
 import { getChromeState, type PortMock } from '../helpers/chrome-mock';
 import {
   createPersistedMessage,
@@ -378,4 +379,136 @@ it('saves multiple custom levels, snapshots selection, and resets a deleted sele
   el<HTMLButtonElement>('saveCustomEffortsBtn').click();
   await waitFor(() => select.value === 'default');
   expect(payload.reasoningEffort).toBe('ultra');
+});
+
+describe('chat window branching', () => {
+  async function bootWithHistory(messages: PersistedMessage[], activeLeafId?: string): Promise<void> {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+    const extensionOrigin = window.location.origin;
+    window.postMessage(
+      { type: 'INIT_CHAT', chatId: 'chat-source', windowTitle: 'Source', historyMessages: messages, activeLeafId },
+      extensionOrigin
+    );
+  }
+
+  it('copies the active path up to the chosen message into a new window', async () => {
+    await bootWithHistory([
+      createPersistedMessage({ id: 'h1', role: 'user', content: 'q1' }),
+      createPersistedMessage({ id: 'h2', content: 'a1' }),
+      createPersistedMessage({ id: 'h3', role: 'user', content: 'q2' }),
+      createPersistedMessage({ id: 'h4', content: 'a2' })
+    ]);
+    await waitFor(() => document.querySelectorAll('.message').length === 4);
+
+    const branchButtons = document.querySelectorAll<HTMLButtonElement>('.message-action-branch');
+    branchButtons[1].click();
+
+    const request = await waitFor(() => {
+      const found = state.runtimeMessages.find(
+        (message) => (message as { type?: string }).type === 'BRANCH_CHAT_WINDOW'
+      );
+      return (found as { chat?: ChatSession } | undefined)?.chat ?? null;
+    });
+
+    expect(request.branchOf).toEqual({ chatId: 'chat-source', messageId: 'h2' });
+    expect(request.messages.map((message) => message.content)).toEqual(['q1', 'a1']);
+    expect(request.activeLeafId).toBe(request.messages[request.messages.length - 1].id);
+    expect(state.storage[chatSessionKey(request.chatId)]).toBeTruthy();
+  });
+
+  it('renders only the active branch from INIT_CHAT', async () => {
+    await bootWithHistory([
+      createPersistedMessage({ id: 'h1', role: 'user', content: 'q1', parentId: null }),
+      createPersistedMessage({ id: 'a1', content: 'first', parentId: 'h1' }),
+      createPersistedMessage({ id: 'a2', content: 'second', parentId: 'h1' })
+    ], 'a1');
+    await waitFor(() => document.querySelectorAll('.message').length === 2);
+
+    expect(document.querySelectorAll('.message-user').length).toBe(1);
+    expect(document.querySelector('.message-assistant .message-content')?.textContent).toContain('first');
+  });
+});
+
+describe('chat window message versions', () => {
+  async function bootWithVersions(): Promise<void> {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+    const extensionOrigin = window.location.origin;
+    window.postMessage({
+      type: 'INIT_CHAT',
+      chatId: 'chat-versions',
+      historyMessages: [
+        createPersistedMessage({ id: 'h1', role: 'user', content: 'q1', parentId: null }),
+        createPersistedMessage({ id: 'a1', content: 'first answer', parentId: 'h1' }),
+        createPersistedMessage({ id: 'a2', content: 'second answer', parentId: 'h1' })
+      ],
+      activeLeafId: 'a1'
+    }, extensionOrigin);
+    await waitFor(() => document.querySelectorAll('.message').length === 2);
+  }
+
+  it('shows the version navigator and switches between siblings', async () => {
+    await bootWithVersions();
+
+    expect(document.querySelector('.message-versions .message-version-label')?.textContent).toBe('1/2');
+    expect(document.querySelector('.message-assistant .message-content')?.textContent).toContain('first answer');
+
+    document.querySelector<HTMLButtonElement>('.message-version-btn[data-version-dir="1"]')?.click();
+
+    await waitFor(() => document.querySelector('.message-version-label')?.textContent === '2/2');
+    expect(document.querySelector('.message-assistant .message-content')?.textContent).toContain('second answer');
+    expect(state.runtimeMessages).toContainEqual({
+      type: 'SET_ACTIVE_LEAF',
+      chatId: 'chat-versions',
+      leafId: 'a2'
+    });
+  });
+
+  it('edits a user message into a sibling branch and resends', async () => {
+    await bootWithVersions();
+
+    document.querySelector<HTMLButtonElement>('.message-user .message-action-edit')?.click();
+    const textarea = await waitFor(() => document.querySelector<HTMLTextAreaElement>('.message-edit-input'));
+    textarea.value = 'edited question';
+    document.querySelector<HTMLButtonElement>('.message-edit-save')?.click();
+
+    const payload = await waitFor(() => {
+      const candidate = lastStartChat();
+      return candidate && candidate.purpose === 'edit' ? candidate : null;
+    });
+
+    expect(payload.appendUserMessage).toBe(true);
+    expect(payload.parentMessageId).toBeNull();
+    expect(payload.userMessage).toBe('edited question');
+    expect(payload.userMessageId).toBeTruthy();
+    expect(payload.userMessageId).not.toBe('h1');
+    expect(payload.messages[payload.messages.length - 1]).toEqual({ role: 'user', content: 'edited question' });
+  });
+
+  it('regenerates an assistant message without appending a user turn', async () => {
+    await bootWithVersions();
+
+    document.querySelector<HTMLButtonElement>('.message-assistant .message-action-regenerate')?.click();
+
+    const payload = await waitFor(() => {
+      const candidate = lastStartChat();
+      return candidate && candidate.purpose === 'regenerate' ? candidate : null;
+    });
+
+    expect(payload.appendUserMessage).toBe(false);
+    expect(payload.parentMessageId).toBe('h1');
+    expect(payload.userMessageId).toBe('h1');
+    expect(payload.userMessage).toBe('q1');
+  });
 });
