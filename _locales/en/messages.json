@@ -401,6 +401,54 @@
     "message": "Copied",
     "description": "Copied assistant message button state"
   },
+  "chat__btnEdit": {
+    "message": "Edit",
+    "description": "Edit user message button"
+  },
+  "chat__btnSaveEdit": {
+    "message": "Send",
+    "description": "Save edited user message and resend"
+  },
+  "chat__btnCancelEdit": {
+    "message": "Cancel",
+    "description": "Cancel editing a user message"
+  },
+  "chat__btnRegenerate": {
+    "message": "Regenerate",
+    "description": "Regenerate an assistant message"
+  },
+  "chat__btnRegenerateWithModel": {
+    "message": "Regenerate with model",
+    "description": "Regenerate an assistant message using another provider"
+  },
+  "chat__btnBranch": {
+    "message": "Continue from here",
+    "description": "Branch the conversation into a new window from this message"
+  },
+  "chat__branchSuffix": {
+    "message": "branch",
+    "description": "Suffix appended to the title of a branched chat"
+  },
+  "chat__versionPrev": {
+    "message": "Previous version",
+    "description": "Show the previous message version"
+  },
+  "chat__versionNext": {
+    "message": "Next version",
+    "description": "Show the next message version"
+  },
+  "chat__statusBranchOpened": {
+    "message": "Branch opened in a new window.",
+    "description": "A branched conversation window was opened"
+  },
+  "chat__statusBranchFailed": {
+    "message": "Could not open the branch window.",
+    "description": "Opening a branched conversation window failed"
+  },
+  "chat__statusRegenerateUnavailable": {
+    "message": "This answer cannot be regenerated.",
+    "description": "The parent question for regeneration was not found"
+  },
   "chat__statusInitFailed": {
     "message": "Init failed: $1",
     "description": "Initialization failed with placeholder"

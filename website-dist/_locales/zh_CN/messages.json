@@ -401,6 +401,54 @@
     "message": "已复制",
     "description": "助手消息复制完成按钮状态"
   },
+  "chat__btnEdit": {
+    "message": "编辑",
+    "description": "编辑用户消息按钮"
+  },
+  "chat__btnSaveEdit": {
+    "message": "发送",
+    "description": "保存编辑后的用户消息并重新发送"
+  },
+  "chat__btnCancelEdit": {
+    "message": "取消",
+    "description": "取消编辑用户消息"
+  },
+  "chat__btnRegenerate": {
+    "message": "重新生成",
+    "description": "重新生成助手消息"
+  },
+  "chat__btnRegenerateWithModel": {
+    "message": "换模型重答",
+    "description": "使用其它模型配置重新生成助手消息"
+  },
+  "chat__btnBranch": {
+    "message": "从这里继续",
+    "description": "从该消息分支到新窗口"
+  },
+  "chat__branchSuffix": {
+    "message": "分支",
+    "description": "分支会话标题后缀"
+  },
+  "chat__versionPrev": {
+    "message": "上一版本",
+    "description": "显示上一版本消息"
+  },
+  "chat__versionNext": {
+    "message": "下一版本",
+    "description": "显示下一版本消息"
+  },
+  "chat__statusBranchOpened": {
+    "message": "已在新窗口打开分支。",
+    "description": "分支会话窗口已打开"
+  },
+  "chat__statusBranchFailed": {
+    "message": "无法打开分支窗口。",
+    "description": "打开分支会话窗口失败"
+  },
+  "chat__statusRegenerateUnavailable": {
+    "message": "该回答无法重新生成。",
+    "description": "未找到重新生成所需的父级问题"
+  },
   "chat__statusInitFailed": {
     "message": "初始化失败：$1",
     "description": "初始化失败消息"
