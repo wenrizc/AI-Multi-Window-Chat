@@ -244,6 +244,72 @@ describe('chat window settings', () => {
 });
 
 describe('chat window failure handling', () => {
+  it('reconnects the runtime port after it disconnects before sending', async () => {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+
+    const disconnectedPort = state.lastPort() as PortMock;
+    disconnectedPort.disconnect();
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'reconnect me');
+    await userEvent.click(el<HTMLButtonElement>('sendBtn'));
+
+    const payload = await waitFor(() => {
+      const candidate = lastStartChat();
+      return candidate && candidate.userMessage === 'reconnect me' ? candidate : null;
+    });
+    expect(state.lastPort()).not.toBe(disconnectedPort);
+    expect(payload.userMessage).toBe('reconnect me');
+  });
+
+  it('retries immediately when a stale port rejects the first dispatch', async () => {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+
+    const stalePort = state.lastPort() as PortMock;
+    stalePort.postMessage = () => {
+      throw new Error('The message port closed before a response was received.');
+    };
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'retry dispatch');
+    await userEvent.click(el<HTMLButtonElement>('sendBtn'));
+
+    const payload = await waitFor(() => {
+      const candidate = lastStartChat();
+      return candidate && candidate.userMessage === 'retry dispatch' ? candidate : null;
+    });
+    expect(state.lastPort()).not.toBe(stalePort);
+    expect(payload.userMessage).toBe('retry dispatch');
+    expect(el('composerStatus').hidden).toBe(false);
+    expect(el('composerStatus').dataset.variant).toBe('busy');
+  });
+
+  it('does not append duplicate messages while a send is being prepared', async () => {
+    await bootChat(
+      {
+        providers: [createProvider({ id: 'p1' })],
+        featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+      },
+      'p1'
+    );
+
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'send once');
+    el<HTMLButtonElement>('sendBtn').click();
+    el<HTMLButtonElement>('sendBtn').click();
+
+    await waitFor(() => lastStartChat()?.userMessage === 'send once');
+    expect(startChatPayloads()).toHaveLength(1);
+    expect(document.querySelectorAll('.message-user')).toHaveLength(1);
+  });
+
   it('shows an auth failure for a 401 provider error', async () => {
     await bootChat(
       {
@@ -422,6 +488,25 @@ describe('chat window branching', () => {
     expect(state.storage[chatSessionKey(request.chatId)]).toBeTruthy();
   });
 
+  it('releases the branch guard when the new window cannot be opened', async () => {
+    await bootWithHistory([
+      createPersistedMessage({ id: 'h1', role: 'user', content: 'q1' }),
+      createPersistedMessage({ id: 'h2', content: 'a1' })
+    ]);
+    await waitFor(() => document.querySelectorAll('.message').length === 2);
+
+    let branchCalls = 0;
+    state.setRuntimeMessageHandler(() => {
+      branchCalls += 1;
+      return branchCalls === 1 ? { success: false, error: 'denied' } : { success: true };
+    });
+    const branchButton = document.querySelector<HTMLButtonElement>('.message-action-branch');
+    branchButton?.click();
+    await waitFor(() => branchCalls === 1);
+    branchButton?.click();
+    await waitFor(() => branchCalls === 2);
+  });
+
   it('renders only the active branch from INIT_CHAT', async () => {
     await bootWithHistory([
       createPersistedMessage({ id: 'h1', role: 'user', content: 'q1', parentId: null }),
@@ -499,7 +584,9 @@ describe('chat window message versions', () => {
   it('regenerates an assistant message without appending a user turn', async () => {
     await bootWithVersions();
 
-    document.querySelector<HTMLButtonElement>('.message-assistant .message-action-regenerate')?.click();
+    const regenerateButton = document.querySelector<HTMLButtonElement>('.message-assistant .message-action-regenerate');
+    regenerateButton?.click();
+    regenerateButton?.click();
 
     const payload = await waitFor(() => {
       const candidate = lastStartChat();
@@ -510,5 +597,6 @@ describe('chat window message versions', () => {
     expect(payload.parentMessageId).toBe('h1');
     expect(payload.userMessageId).toBe('h1');
     expect(payload.userMessage).toBe('q1');
+    expect(startChatPayloads()).toHaveLength(1);
   });
 });

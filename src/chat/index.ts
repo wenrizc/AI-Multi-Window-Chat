@@ -110,7 +110,13 @@ class ChatWindowApp {
   private prompts: PromptConfig[] = [];
   private featureSettings: FeatureSettings | null = null;
   private isLoading = false;
-  private port = chrome.runtime.connect({ name: PORT_NAME });
+  private port: chrome.runtime.Port | null = null;
+  /** Prevents overlapping send/edit/regenerate preparation phases. */
+  private requestPreparationInFlight = false;
+  /** Prevents opening duplicate branch windows while storage is being written. */
+  private branchInFlight = false;
+  /** Prevents out-of-order active-leaf updates from rapid version clicks. */
+  private versionSwitchInFlight = false;
   private currentRequestId: string | null = null;
   private currentAssistantState: AssistantRenderState | null = null;
   private currentAssistantText = '';
@@ -172,6 +178,7 @@ class ChatWindowApp {
   };
 
   constructor() {
+    this.connectPort();
     this.init().catch((error) => {
       console.error(error);
       this.setLocalizedComposerStatus('chat__statusInitFailed', 'error', undefined, getErrorMessage(error));
@@ -185,9 +192,6 @@ class ChatWindowApp {
     }
 
     this.bindEvents();
-    this.port.onMessage.addListener((event) => {
-      void this.handleStreamEvent(event as StreamEvent);
-    });
 
     window.addEventListener('message', (event) => {
       if (!isTrustedWindowMessage(event)) {
@@ -238,6 +242,55 @@ class ChatWindowApp {
     this.elements.searchToggle.checked = config.featureSettings.search.enabledByDefault;
   }
 
+  /** Connects lazily so a restarted MV3 service worker can recover on send. */
+  private connectPort(): chrome.runtime.Port | null {
+    if (this.port) {
+      return this.port;
+    }
+
+    try {
+      const port = chrome.runtime.connect({ name: PORT_NAME });
+      port.onMessage.addListener((event) => {
+        void this.handleStreamEvent(event as StreamEvent).catch((error) => {
+          this.reportAsyncFailure(error);
+        });
+      });
+      port.onDisconnect.addListener(() => {
+        this.handlePortDisconnect(port);
+      });
+      this.port = port;
+      return port;
+    } catch (error) {
+      console.error('Failed to connect chat runtime port', error);
+      return null;
+    }
+  }
+
+  private handlePortDisconnect(port: chrome.runtime.Port) {
+    if (this.port !== port) {
+      return;
+    }
+    this.port = null;
+
+    if (!this.isLoading) {
+      return;
+    }
+
+    const purpose = this.currentPurpose;
+    this.cancelScheduledRender();
+    this.resetLoadingState();
+    if (purpose === 'regenerate' && this.previousActiveLeafId !== null) {
+      this.activeLeafId = this.previousActiveLeafId;
+    }
+    this.renderHistory().catch((error) => console.error(error));
+    this.setLocalizedComposerStatus('chat__errorNetwork', 'error');
+    this.setRetryButtonVisible(Boolean(this.retryTemplate));
+  }
+
+  private getPort(): chrome.runtime.Port | null {
+    return this.port ?? this.connectPort();
+  }
+
   private applyInitPayload(payload: {
     chatId?: string;
     windowTitle?: string;
@@ -285,17 +338,22 @@ class ChatWindowApp {
   }
 
   private bindEvents() {
-    this.elements.sendBtn.addEventListener('click', () => this.handlePrimaryAction());
+    this.elements.sendBtn.addEventListener('click', () => {
+      void Promise.resolve()
+        .then(() => this.handlePrimaryAction())
+        .catch((error) => this.reportAsyncFailure(error));
+    });
     this.elements.attachmentBtn.addEventListener('click', () => this.elements.attachmentInput.click());
     this.elements.attachmentInput.addEventListener('change', () => {
-      void this.addFiles(Array.from(this.elements.attachmentInput.files ?? []));
+      void this.addFiles(Array.from(this.elements.attachmentInput.files ?? []))
+        .catch((error) => this.reportAsyncFailure(error));
       this.elements.attachmentInput.value = '';
     });
     this.elements.messageInput.addEventListener('paste', (event) => {
       const files = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
       if (files.length) {
         event.preventDefault();
-        void this.addFiles(files);
+        void this.addFiles(files).catch((error) => this.reportAsyncFailure(error));
       }
     });
     this.elements.composerRetryBtn.addEventListener('click', () => this.retryLastRequest());
@@ -307,7 +365,7 @@ class ChatWindowApp {
     this.elements.messageInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        void this.sendMessage();
+        void this.sendMessage().catch((error) => this.reportAsyncFailure(error));
       }
     });
     this.elements.messageInput.addEventListener('input', () => {
@@ -343,7 +401,9 @@ class ChatWindowApp {
     this.elements.reasoningEffortSelect.addEventListener('change', () => {
       this.reasoningEffort = (this.elements.reasoningEffortSelect.value || 'default') as ReasoningEffort;
     });
-    this.elements.saveCustomEffortsBtn.addEventListener('click', () => void this.saveCustomEfforts());
+    this.elements.saveCustomEffortsBtn.addEventListener('click', () => {
+      void this.saveCustomEfforts().catch((error) => this.reportAsyncFailure(error));
+    });
     document.addEventListener('pointerdown', (event) => {
       if (!this.settingsOpen) {
         return;
@@ -427,12 +487,12 @@ class ChatWindowApp {
     }));
   }
 
-  private handlePrimaryAction() {
+  private handlePrimaryAction(): Promise<void> | void {
     if (this.isLoading) {
       this.abortCurrentRequest();
       return;
     }
-    void this.sendMessage();
+    return this.sendMessage();
   }
 
   private createReasoningBlock(summary: string): HTMLElement {
@@ -704,7 +764,7 @@ class ChatWindowApp {
       button.addEventListener('click', (event) => {
         event.stopPropagation();
         const direction = Number(button.dataset.versionDir) || 0;
-        void this.switchVersion(message, direction);
+        void this.switchVersion(message, direction).catch((error) => this.reportAsyncFailure(error));
       });
     });
     return navigator;
@@ -720,7 +780,9 @@ class ChatWindowApp {
       actions.appendChild(editBtn);
     } else {
       const regenerateBtn = this.createActionButton('regenerate', t('chat__btnRegenerate'), REGENERATE_ICON_SVG);
-      regenerateBtn.addEventListener('click', () => void this.regenerateMessage(message));
+      regenerateBtn.addEventListener('click', () => {
+        void this.regenerateMessage(message).catch((error) => this.reportAsyncFailure(error));
+      });
       actions.appendChild(regenerateBtn);
 
       if (this.providers.length > 0) {
@@ -734,7 +796,7 @@ class ChatWindowApp {
           const providerId = modelSelect.value || this.profileId;
           modelSelect.value = '';
           if (providerId) {
-            void this.regenerateMessage(message, providerId);
+            void this.regenerateMessage(message, providerId).catch((error) => this.reportAsyncFailure(error));
           }
         });
         actions.appendChild(modelSelect);
@@ -742,7 +804,9 @@ class ChatWindowApp {
     }
 
     const branchBtn = this.createActionButton('branch', t('chat__btnBranch'), BRANCH_ICON_SVG);
-    branchBtn.addEventListener('click', () => void this.branchFromMessage(message));
+    branchBtn.addEventListener('click', () => {
+      void this.branchFromMessage(message).catch((error) => this.reportAsyncFailure(error));
+    });
     actions.appendChild(branchBtn);
 
     return actions;
@@ -856,7 +920,7 @@ class ChatWindowApp {
 
   private async sendMessage() {
     const content = this.elements.messageInput.value.trim();
-    if ((!content && this.attachments.length === 0) || this.isLoading) {
+    if ((!content && this.attachments.length === 0) || this.isLoading || this.requestPreparationInFlight) {
       return;
     }
     if (this.attachments.some((attachment) => attachment.status === 'parsing')) {
@@ -864,71 +928,76 @@ class ChatWindowApp {
       return;
     }
 
-    this.clearComposerStatus();
-    this.hideRetryButton();
-    this.retryTemplate = null;
-    this.retryAttempts = 0;
+    this.requestPreparationInFlight = true;
+    try {
+      this.clearComposerStatus();
+      this.hideRetryButton();
+      this.retryTemplate = null;
+      this.retryAttempts = 0;
 
-    if (!this.profileId) {
-      this.setLocalizedComposerStatus('chat__statusCreateProviderFirst', 'warning');
-      return;
-    }
-
-    const provider = this.providers.find((item) => item.id === this.profileId);
-    if (!provider) {
-      this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
-      return;
-    }
-
-    const prompt = this.prompts.find((item) => item.id === this.promptId) ?? null;
-    if (this.promptId && !prompt) {
-      this.setLocalizedComposerStatus('chat__statusPromptUnavailable', 'warning');
-      return;
-    }
-
-    if (this.elements.searchToggle.checked && !this.featureSettings?.search.tavilyApiKey.trim()) {
-      this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
-      return;
-    }
-
-    const model = this.getCurrentModel();
-    if (!model?.modelId) {
-      this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
-      return;
-    }
-
-    const mode: ChatMode = this.elements.searchToggle.checked ? 'search' : 'chat';
-    this.currentMode = mode;
-    const readyTextFiles = this.attachments.filter((a) => a.status === 'ready' && !a.mimeType.startsWith('image/'));
-    const effectiveContent = [content, ...readyTextFiles.map((a) => {
-      try {
-        const bytes = Uint8Array.from(atob(a.dataUrl.split(',')[1] || ''), (char) => char.charCodeAt(0));
-        return `\n[${a.name}]\n${new TextDecoder().decode(bytes)}`;
-      } catch {
-        return `\n[${a.name}]`;
+      if (!this.profileId) {
+        this.setLocalizedComposerStatus('chat__statusCreateProviderFirst', 'warning');
+        return;
       }
-    })].filter(Boolean).join('\n').trim();
-    const parentId = this.activeLeafId;
-    const userMessage = await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'), parentId, mode);
-    this.elements.messageInput.value = '';
-    const requestAttachments = this.attachments.filter((a) => a.status === 'ready' && a.mimeType.startsWith('image/'));
-    this.attachments = [];
-    this.renderAttachments();
-    this.adjustTextareaHeight();
-    await this.renderHistory();
 
-    this.postChatRequest({
-      provider,
-      prompt,
-      model,
-      mode,
-      userMessage: userMessage.content,
-      userMessageId: userMessage.id,
-      parentMessageId: parentId,
-      appendUserMessage: true,
-      purpose: 'send',
-      attachments: requestAttachments
-    });
+      const provider = this.providers.find((item) => item.id === this.profileId);
+      if (!provider) {
+        this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+        return;
+      }
+
+      const prompt = this.prompts.find((item) => item.id === this.promptId) ?? null;
+      if (this.promptId && !prompt) {
+        this.setLocalizedComposerStatus('chat__statusPromptUnavailable', 'warning');
+        return;
+      }
+
+      if (this.elements.searchToggle.checked && !this.featureSettings?.search.tavilyApiKey.trim()) {
+        this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
+        return;
+      }
+
+      const model = this.getCurrentModel();
+      if (!model?.modelId) {
+        this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
+        return;
+      }
+
+      const mode: ChatMode = this.elements.searchToggle.checked ? 'search' : 'chat';
+      this.currentMode = mode;
+      const readyTextFiles = this.attachments.filter((a) => a.status === 'ready' && !a.mimeType.startsWith('image/'));
+      const effectiveContent = [content, ...readyTextFiles.map((a) => {
+        try {
+          const bytes = Uint8Array.from(atob(a.dataUrl.split(',')[1] || ''), (char) => char.charCodeAt(0));
+          return `\n[${a.name}]\n${new TextDecoder().decode(bytes)}`;
+        } catch {
+          return `\n[${a.name}]`;
+        }
+      })].filter(Boolean).join('\n').trim();
+      const parentId = this.activeLeafId;
+      const userMessage = await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'), parentId, mode);
+      this.elements.messageInput.value = '';
+      const requestAttachments = this.attachments.filter((a) => a.status === 'ready' && a.mimeType.startsWith('image/'));
+      this.attachments = [];
+      this.renderAttachments();
+      this.adjustTextareaHeight();
+      await this.renderHistory();
+
+      this.postChatRequest({
+        provider,
+        prompt,
+        model,
+        mode,
+        userMessage: userMessage.content,
+        userMessageId: userMessage.id,
+        parentMessageId: parentId,
+        appendUserMessage: true,
+        purpose: 'send',
+        attachments: requestAttachments
+      });
+    } finally {
+      this.requestPreparationInFlight = false;
+    }
   }
 
   /**
@@ -1000,21 +1069,6 @@ class ChatWindowApp {
       purpose: params.purpose
     };
 
-    try {
-      this.port.postMessage({
-        type: 'start_chat',
-        payload: request
-      });
-    } catch (error) {
-      // The runtime port can be gone (e.g. service worker restarted); recover the
-      // composer instead of leaving the placeholder stuck in a loading state.
-      console.error(error);
-      this.resetLoadingState();
-      this.renderHistory().catch((renderError) => console.error(renderError));
-      this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
-      return;
-    }
-
     this.retryTemplate = {
       chatId: request.chatId,
       windowTitle: request.windowTitle,
@@ -1035,54 +1089,85 @@ class ChatWindowApp {
       appendUserMessage: request.appendUserMessage,
       purpose: request.purpose
     };
+
+    const port = this.getPort();
+    try {
+      if (!port) {
+        throw new Error('Chat background connection is unavailable.');
+      }
+      port.postMessage({
+        type: 'start_chat',
+        payload: request
+      });
+    } catch (error) {
+      // The runtime port can be gone (e.g. service worker restarted). Reconnect
+      // and retry once before surfacing a failure to the user.
+      if (this.port === port) {
+        this.port = null;
+      }
+      const recoveredPort = this.getPort();
+      if (recoveredPort && recoveredPort !== port) {
+        try {
+          recoveredPort.postMessage({
+            type: 'start_chat',
+            payload: request
+          });
+          return;
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+      console.error(error);
+      // Recover the composer instead of leaving the placeholder stuck in a
+      // loading state.
+      this.resetLoadingState();
+      this.renderHistory().catch((renderError) => console.error(renderError));
+      this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
+      this.setRetryButtonVisible(true);
+      return;
+    }
   }
 
   /** Copies the active path up to `message` into a brand new branched session. */
   private async branchFromMessage(message: PersistedMessage) {
-    if (this.isLoading) {
+    if (this.isLoading || this.requestPreparationInFlight || this.branchInFlight) {
       return;
     }
-    const path = this.getActivePath();
-    const index = path.findIndex((item) => item.id === message.id);
-    if (index < 0) {
-      return;
-    }
-
-    const prefix = path.slice(0, index + 1);
-    const branchMessages: PersistedMessage[] = prefix.map((item) => ({
-      ...item,
-      id: uid('msg'),
-      parentId: null
-    }));
-    branchMessages.forEach((item, position) => {
-      item.parentId = position === 0 ? null : branchMessages[position - 1].id;
-    });
-
-    const titleBase = this.windowTitle || t('content__aiChat');
-    const session: ChatSession = {
-      chatId: uid('chat'),
-      title: `${titleBase} · ${t('chat__branchSuffix')}`,
-      providerId: this.profileId,
-      promptId: this.promptId,
-      streamingOverride: this.streamingOverride,
-      mode: prefix[prefix.length - 1]?.mode ?? 'chat',
-      messages: branchMessages,
-      activeLeafId: branchMessages[branchMessages.length - 1]?.id ?? null,
-      branchOf: { chatId: this.chatId, messageId: message.id },
-      totalUsage: null,
-      createdAt: nowIso(),
-      updatedAt: nowIso()
-    };
-
+    this.branchInFlight = true;
     try {
+      const path = this.getActivePath();
+      const index = path.findIndex((item) => item.id === message.id);
+      if (index < 0) {
+        return;
+      }
+
+      const prefix = path.slice(0, index + 1);
+      const branchMessages: PersistedMessage[] = prefix.map((item) => ({
+        ...item,
+        id: uid('msg'),
+        parentId: null
+      }));
+      branchMessages.forEach((item, position) => {
+        item.parentId = position === 0 ? null : branchMessages[position - 1].id;
+      });
+
+      const titleBase = this.windowTitle || t('content__aiChat');
+      const session: ChatSession = {
+        chatId: uid('chat'),
+        title: `${titleBase} · ${t('chat__branchSuffix')}`,
+        providerId: this.profileId,
+        promptId: this.promptId,
+        streamingOverride: this.streamingOverride,
+        mode: prefix[prefix.length - 1]?.mode ?? 'chat',
+        messages: branchMessages,
+        activeLeafId: branchMessages[branchMessages.length - 1]?.id ?? null,
+        branchOf: { chatId: this.chatId, messageId: message.id },
+        totalUsage: null,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      };
+
       await upsertChatSession(session);
-    } catch (error) {
-      console.error(error);
-      this.setLocalizedComposerStatus('chat__statusBranchFailed', 'error');
-      return;
-    }
-
-    try {
       const response = await chrome.runtime.sendMessage({ type: 'BRANCH_CHAT_WINDOW', chat: session });
       if (response && typeof response === 'object' && (response as { success?: boolean }).success === false) {
         this.setLocalizedComposerStatus('chat__statusBranchFailed', 'error');
@@ -1092,12 +1177,14 @@ class ChatWindowApp {
     } catch (error) {
       console.error(error);
       this.setLocalizedComposerStatus('chat__statusBranchFailed', 'error');
+    } finally {
+      this.branchInFlight = false;
     }
   }
 
   /** Opens an inline editor for a user message. */
   private startEditMessage(message: PersistedMessage) {
-    if (this.isLoading) {
+    if (this.isLoading || this.requestPreparationInFlight || this.branchInFlight) {
       return;
     }
     const wrapper = this.elements.messagesContainer.querySelector<HTMLElement>(
@@ -1139,95 +1226,108 @@ class ChatWindowApp {
         return;
       }
       close();
-      void this.applyEdit(message, next);
+      void this.applyEdit(message, next).catch((error) => this.reportAsyncFailure(error));
     });
   }
 
   /** Forks the conversation by replacing `target` with an edited sibling turn. */
   private async applyEdit(target: PersistedMessage, newContent: string) {
-    const provider = this.providers.find((item) => item.id === this.profileId);
-    if (!provider) {
-      this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+    if (this.isLoading || this.requestPreparationInFlight) {
       return;
     }
-    const model = getModel(provider, provider.defaultModel);
-    if (!model?.modelId) {
-      this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
-      return;
+    this.requestPreparationInFlight = true;
+    try {
+      const provider = this.providers.find((item) => item.id === this.profileId);
+      if (!provider) {
+        this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+        return;
+      }
+      const model = getModel(provider, provider.defaultModel);
+      if (!model?.modelId) {
+        this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
+        return;
+      }
+
+      this.hideRetryButton();
+      this.retryTemplate = null;
+      this.retryAttempts = 0;
+      this.clearComposerStatus();
+
+      const parentId = target.parentId ?? null;
+      this.currentMode = target.mode;
+      const userMessage = await this.appendUserMessage(newContent, parentId, target.mode);
+      await this.renderHistory();
+
+      this.postChatRequest({
+        provider,
+        prompt: this.resolvePrompt(target.promptId ?? this.promptId),
+        model,
+        mode: target.mode,
+        userMessage: newContent,
+        userMessageId: userMessage.id,
+        parentMessageId: parentId,
+        appendUserMessage: true,
+        purpose: 'edit',
+        attachments: []
+      });
+    } finally {
+      this.requestPreparationInFlight = false;
     }
-
-    this.hideRetryButton();
-    this.retryTemplate = null;
-    this.retryAttempts = 0;
-    this.clearComposerStatus();
-
-    const parentId = target.parentId ?? null;
-    this.currentMode = target.mode;
-    const userMessage = await this.appendUserMessage(newContent, parentId, target.mode);
-    await this.renderHistory();
-
-    this.postChatRequest({
-      provider,
-      prompt: this.resolvePrompt(target.promptId ?? this.promptId),
-      model,
-      mode: target.mode,
-      userMessage: newContent,
-      userMessageId: userMessage.id,
-      parentMessageId: parentId,
-      appendUserMessage: true,
-      purpose: 'edit',
-      attachments: []
-    });
   }
 
   /** Regenerates an assistant message, optionally using a different provider. */
   private async regenerateMessage(target: PersistedMessage, providerId?: string | null) {
-    if (this.isLoading || target.role !== 'assistant') {
+    if (this.isLoading || this.requestPreparationInFlight || target.role !== 'assistant') {
       return;
     }
-    const provider = this.providers.find((item) => item.id === (providerId || this.profileId));
-    if (!provider) {
-      this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
-      return;
-    }
-    const model = getModel(provider, provider.defaultModel);
-    if (!model?.modelId) {
-      this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
-      return;
-    }
+    this.requestPreparationInFlight = true;
+    try {
+      const provider = this.providers.find((item) => item.id === (providerId || this.profileId));
+      if (!provider) {
+        this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
+        return;
+      }
+      const model = getModel(provider, provider.defaultModel);
+      if (!model?.modelId) {
+        this.setLocalizedComposerStatus('chat__errorModelUnavailable', 'error');
+        return;
+      }
 
-    const parentId = target.parentId ?? null;
-    const userMessage = parentId ? this.messages.find((item) => item.id === parentId) : undefined;
-    if (!userMessage) {
-      this.setLocalizedComposerStatus('chat__statusRegenerateUnavailable', 'warning');
-      return;
+      const parentId = target.parentId ?? null;
+      const userMessage = parentId ? this.messages.find((item) => item.id === parentId) : undefined;
+      if (!userMessage) {
+        this.setLocalizedComposerStatus('chat__statusRegenerateUnavailable', 'warning');
+        return;
+      }
+      if (target.mode === 'search' && !this.featureSettings?.search.tavilyApiKey.trim()) {
+        this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
+        return;
+      }
+
+      this.hideRetryButton();
+      this.retryTemplate = null;
+      this.retryAttempts = 0;
+      this.clearComposerStatus();
+
+      this.previousActiveLeafId = this.activeLeafId;
+      this.activeLeafId = parentId;
+      await this.renderHistory();
+
+      this.postChatRequest({
+        provider,
+        prompt: this.resolvePrompt(target.promptId ?? this.promptId),
+        model,
+        mode: target.mode,
+        userMessage: userMessage.content,
+        userMessageId: userMessage.id,
+        parentMessageId: parentId,
+        appendUserMessage: false,
+        purpose: 'regenerate',
+        attachments: []
+      });
+    } finally {
+      this.requestPreparationInFlight = false;
     }
-    if (target.mode === 'search' && !this.featureSettings?.search.tavilyApiKey.trim()) {
-      this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
-      return;
-    }
-
-    this.hideRetryButton();
-    this.retryTemplate = null;
-    this.retryAttempts = 0;
-    this.clearComposerStatus();
-
-    this.previousActiveLeafId = this.activeLeafId;
-    this.activeLeafId = parentId;
-    await this.renderHistory();
-
-    this.postChatRequest({
-      provider,
-      prompt: this.resolvePrompt(target.promptId ?? this.promptId),
-      model,
-      mode: target.mode,
-      userMessage: userMessage.content,
-      userMessageId: userMessage.id,
-      parentMessageId: parentId,
-      appendUserMessage: false,
-      purpose: 'regenerate',
-      attachments: []
-    });
   }
 
   private resolvePrompt(promptId: string | null): PromptConfig | null {
@@ -1236,23 +1336,28 @@ class ChatWindowApp {
 
   /** Switches between sibling versions and shows the newest leaf under it. */
   private async switchVersion(message: PersistedMessage, direction: number) {
-    if (this.isLoading) {
+    if (this.isLoading || this.requestPreparationInFlight || this.versionSwitchInFlight) {
       return;
     }
     const info = getSiblingInfo(message, this.messages);
     if (info.total <= 1) {
       return;
     }
-    const nextIndex = (info.index + direction + info.total) % info.total;
-    const target = info.siblings[nextIndex];
-    const leafId = findLatestLeafUnder(target.id, this.messages) ?? target.id;
-    this.activeLeafId = leafId;
-    await this.renderHistory();
-    this.userPinnedToBottom = true;
-    this.scrollToBottom();
-    chrome.runtime.sendMessage({ type: 'SET_ACTIVE_LEAF', chatId: this.chatId, leafId }).catch((error) => {
-      console.error(error);
-    });
+    this.versionSwitchInFlight = true;
+    try {
+      const nextIndex = (info.index + direction + info.total) % info.total;
+      const target = info.siblings[nextIndex];
+      const leafId = findLatestLeafUnder(target.id, this.messages) ?? target.id;
+      this.activeLeafId = leafId;
+      await this.renderHistory();
+      this.userPinnedToBottom = true;
+      this.scrollToBottom();
+      chrome.runtime.sendMessage({ type: 'SET_ACTIVE_LEAF', chatId: this.chatId, leafId }).catch((error) => {
+        console.error(error);
+      });
+    } finally {
+      this.versionSwitchInFlight = false;
+    }
   }
 
   private abortCurrentRequest() {
@@ -1260,10 +1365,26 @@ class ChatWindowApp {
       return;
     }
     this.setLocalizedComposerStatus('chat__statusStopping', 'busy');
-    this.port.postMessage({
-      type: 'abort_chat',
-      requestId: this.currentRequestId
-    });
+    const port = this.getPort();
+    if (!port) {
+      this.resetLoadingState();
+      this.setLocalizedComposerStatus('chat__errorNetwork', 'error');
+      return;
+    }
+    try {
+      port.postMessage({
+        type: 'abort_chat',
+        requestId: this.currentRequestId
+      });
+    } catch (error) {
+      console.error(error);
+      if (this.port === port) {
+        this.port = null;
+      }
+      this.resetLoadingState();
+      this.renderHistory().catch((renderError) => console.error(renderError));
+      this.setLocalizedComposerStatus('chat__errorNetwork', 'error');
+    }
   }
 
   private async handleStreamEvent(event: StreamEvent) {
@@ -1497,14 +1618,45 @@ class ChatWindowApp {
     this.showLoading(true);
     this.setLocalizedComposerStatus('chat__statusGenerating', 'busy');
 
-    this.port.postMessage({
-      type: 'start_chat',
-      payload: {
-        ...template,
-        requestId: this.currentRequestId,
-        assistantMessageId: this.currentAssistantMessageId
+    const port = this.getPort();
+    try {
+      if (!port) {
+        throw new Error('Chat background connection is unavailable.');
       }
-    });
+      port.postMessage({
+        type: 'start_chat',
+        payload: {
+          ...template,
+          requestId: this.currentRequestId,
+          assistantMessageId: this.currentAssistantMessageId
+        }
+      });
+    } catch (error) {
+      if (this.port === port) {
+        this.port = null;
+      }
+      const recoveredPort = this.getPort();
+      if (recoveredPort && recoveredPort !== port) {
+        try {
+          recoveredPort.postMessage({
+            type: 'start_chat',
+            payload: {
+              ...template,
+              requestId: this.currentRequestId,
+              assistantMessageId: this.currentAssistantMessageId
+            }
+          });
+          return;
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+      console.error(error);
+      this.resetLoadingState();
+      this.renderHistory().catch((renderError) => console.error(renderError));
+      this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
+      this.setRetryButtonVisible(true);
+    }
   }
 
   private updateCurrentReasoningVisibility() {
@@ -1579,6 +1731,18 @@ class ChatWindowApp {
     this.hideRetryButton();
   }
 
+  private reportAsyncFailure(error: unknown) {
+    console.error(error);
+    this.branchInFlight = false;
+    this.requestPreparationInFlight = false;
+    this.versionSwitchInFlight = false;
+    if (this.isLoading) {
+      this.resetLoadingState();
+      this.renderHistory().catch((renderError) => console.error(renderError));
+    }
+    this.setComposerStatus(this.formatChatFailure(getErrorMessage(error)), 'error');
+  }
+
   private formatChatFailure(error: string, code?: FailureCode, status?: number | null) {
     if (code && code !== 'unknown') {
       switch (code) {
@@ -1624,7 +1788,7 @@ class ChatWindowApp {
     if (/(timeout|timed out|etimedout|408|504)/i.test(message)) {
       return t('chat__errorTimeout');
     }
-    if (/(failed to fetch|network|fetch failed|enotfound|econnreset|econnrefused|err_network)/i.test(message)) {
+    if (/(failed to fetch|network|fetch failed|enotfound|econnreset|econnrefused|err_network|could not establish connection|receiving end does not exist|message port closed|port is disconnected|background connection)/i.test(message)) {
       return t('chat__errorNetwork');
     }
     if (/(json|parse|parsing|unexpected token|unexpected end)/i.test(message)) {
