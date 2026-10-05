@@ -237,6 +237,11 @@ class AIMultiWindow {
       type: 'RENAME_CHAT',
       chatId: entry.chatId,
       title
+    }).catch((error) => {
+      // The background worker may restart while a window title is being edited.
+      // This is best-effort persistence, but it must not become an unhandled
+      // rejection in the page hosting the extension.
+      console.warn('Failed to persist chat title', error);
     });
   }
 

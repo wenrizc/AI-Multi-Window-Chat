@@ -143,6 +143,7 @@ class PopupApp {
   private apiKeyVisible = false;
   private onboardingPresetId: OnboardingPresetId = 'openai';
   private historySearchTerm = '';
+  private confirmActionInFlight = false;
 
   async init() {
     document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
@@ -166,20 +167,28 @@ class PopupApp {
     elements.tabs.forEach((tab) => {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab as TabName));
     });
-    elements.addProfileBtn.addEventListener('click', () => this.createProvider());
-    elements.saveBtn.addEventListener('click', () => this.saveProvider());
+    elements.addProfileBtn.addEventListener('click', () => {
+      void this.createProvider().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
+    });
+    elements.saveBtn.addEventListener('click', () => {
+      void this.saveProvider().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
+    });
     elements.deleteBtn.addEventListener('click', () => this.confirmDeleteProvider());
-    elements.setActiveBtn.addEventListener('click', () => this.setDefaultProvider());
+    elements.setActiveBtn.addEventListener('click', () => {
+      void this.setDefaultProvider().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
+    });
     elements.testBtn.addEventListener('click', () => this.testProvider());
     elements.exportProfilesBtn.addEventListener('click', () => {
       this.currentExportTarget = 'providers';
       this.openModal(elements.exportModal);
     });
     elements.importProfilesBtn.addEventListener('click', () => elements.importProfilesInput.click());
-    elements.importProfilesInput.addEventListener('change', () => this.importProviders());
+    elements.importProfilesInput.addEventListener('change', () => {
+      void this.importProviders().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
+    });
     elements.activeProfileSelect.addEventListener('change', () => {
       this.store.featureSettings.defaultProviderId = elements.activeProfileSelect.value || null;
-      this.persist();
+      void this.persist().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
     });
     document.querySelectorAll<HTMLElement>('.preset-btn').forEach((button) => {
       button.addEventListener('click', () => {
@@ -240,18 +249,24 @@ class PopupApp {
       });
     });
 
-    elements.addPromptBtn.addEventListener('click', () => this.createPrompt());
-    elements.savePromptBtn.addEventListener('click', () => this.savePrompt());
+    elements.addPromptBtn.addEventListener('click', () => {
+      void this.createPrompt().catch((error) => this.showStatus(elements.promptStatus, getErrorText(error), 'error'));
+    });
+    elements.savePromptBtn.addEventListener('click', () => {
+      void this.savePrompt().catch((error) => this.showStatus(elements.promptStatus, getErrorText(error), 'error'));
+    });
     elements.deletePromptBtn.addEventListener('click', () => this.confirmDeletePrompt());
     elements.exportPromptsBtn.addEventListener('click', () => {
       this.currentExportTarget = 'prompts';
       this.openModal(elements.exportModal);
     });
     elements.importPromptsBtn.addEventListener('click', () => elements.importPromptsInput.click());
-    elements.importPromptsInput.addEventListener('change', () => this.importPrompts());
+    elements.importPromptsInput.addEventListener('change', () => {
+      void this.importPrompts().catch((error) => this.showStatus(elements.promptStatus, getErrorText(error), 'error'));
+    });
     elements.defaultPromptSelect.addEventListener('change', () => {
       this.store.featureSettings.defaultPromptId = elements.defaultPromptSelect.value || null;
-      this.persist();
+      void this.persist().catch((error) => this.showStatus(elements.promptStatus, getErrorText(error), 'error'));
     });
     elements.promptList.addEventListener('click', (event) => {
       const target = (event.target as HTMLElement).closest('[data-id]') as HTMLElement | null;
@@ -298,11 +313,26 @@ class PopupApp {
     document.querySelectorAll('.export-option').forEach((option) => {
       option.addEventListener('click', () => this.exportCurrent((option as HTMLElement).dataset.format || 'markdown'));
     });
-    elements.confirmBtn.addEventListener('click', async () => {
-      if (this.confirmAction) {
-        await this.confirmAction();
+    elements.confirmBtn.addEventListener('click', () => {
+      if (!this.confirmAction || this.confirmActionInFlight) {
+        return;
       }
-      this.closeModal('confirmModal');
+      const action = this.confirmAction;
+      this.confirmActionInFlight = true;
+      elements.confirmBtn.disabled = true;
+      elements.confirmCancelBtn.disabled = true;
+      void Promise.resolve()
+        .then(() => action())
+        .catch((error) => {
+          this.showStatus(elements.status, getErrorText(error), 'error');
+        })
+        .finally(() => {
+          this.confirmActionInFlight = false;
+          elements.confirmBtn.disabled = false;
+          elements.confirmCancelBtn.disabled = false;
+          this.confirmAction = null;
+          this.closeModal('confirmModal');
+        });
     });
     elements.confirmCancelBtn.addEventListener('click', () => this.closeModal('confirmModal'));
   }
@@ -357,7 +387,9 @@ class PopupApp {
       this.store.providers.unshift(provider);
       this.store.featureSettings.defaultProviderId = provider.id;
       this.selectedProviderId = provider.id;
-      await this.persist();
+      if (!await this.persist()) {
+        return;
+      }
       this.closeModal('onboardingModal');
       try {
         await this.openOnboardingSampleChat();
@@ -417,24 +449,29 @@ class PopupApp {
     elements.tabContents.forEach((content) => content.classList.toggle('active', content.id === `${name}Tab`));
   }
 
-  private async persist() {
+  private async persist(): Promise<boolean> {
     this.enforceFixedDefaults();
-    await this.saveMeta();
+    if (!await this.saveMeta()) {
+      return false;
+    }
     await this.refreshStorageUsage();
     this.renderAll();
+    return true;
   }
 
   /** Persists only the small metadata object; chats live under their own keys. */
-  private async saveMeta(): Promise<void> {
+  private async saveMeta(): Promise<boolean> {
     const { chatHistory: _chatHistory, ...meta } = this.store;
     try {
       await saveConfig(meta as StorageConfig);
+      return true;
     } catch (error) {
       this.showStatus(
         elements.status,
         isStorageQuotaError(error) ? t('popup__statusQuotaExceeded') : getErrorText(error),
         'error'
       );
+      return false;
     }
   }
 
@@ -620,11 +657,13 @@ class PopupApp {
       maxRounds: clampSearchRounds(toNullableInt(elements.maxRoundsInput.value))
     };
     this.store.featureSettings.defaultStreaming = false;
-    await this.saveMeta();
+    if (!await this.saveMeta()) {
+      return;
+    }
     this.showStatus(elements.searchStatus, t('popup__statusSaved'), 'success');
   }
 
-  private createProvider() {
+  private async createProvider() {
     const id = uid('provider');
     const now = nowIso();
     const provider: ProviderConfig = {
@@ -655,7 +694,7 @@ class PopupApp {
     if (!this.store.featureSettings.defaultProviderId) {
       this.store.featureSettings.defaultProviderId = id;
     }
-    this.persist();
+    await this.persist();
   }
 
   private async saveProvider() {
@@ -700,8 +739,10 @@ class PopupApp {
     if (!this.store.featureSettings.defaultProviderId) {
       this.store.featureSettings.defaultProviderId = providerId;
     }
-    await this.persist();
-      this.showStatus(elements.status, t('popup__statusSaved'), 'success');
+    if (!await this.persist()) {
+      return;
+    }
+    this.showStatus(elements.status, t('popup__statusSaved'), 'success');
   }
 
   private confirmDeleteProvider() {
@@ -713,14 +754,18 @@ class PopupApp {
       if (this.store.featureSettings.defaultProviderId === provider.id) {
         this.store.featureSettings.defaultProviderId = this.selectedProviderId;
       }
-      await this.persist();
+      if (!await this.persist()) {
+        return;
+      }
       this.showStatus(elements.status, t('popup__statusDeleted'), 'success');
     });
   }
 
   private async setDefaultProvider() {
     this.store.featureSettings.defaultProviderId = this.selectedProviderId;
-    await this.persist();
+    if (!await this.persist()) {
+      return;
+    }
     this.showStatus(elements.status, t('popup__statusSetActive'), 'success');
   }
 
@@ -769,7 +814,9 @@ class PopupApp {
         );
         this.enforceFixedDefaults();
         this.selectedProviderId = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? null;
-        await this.persist();
+        if (!await this.persist()) {
+          return;
+        }
         this.showStatus(
           elements.status,
           t('config__statusImported', {
@@ -806,7 +853,7 @@ class PopupApp {
     elements.promptContent.value = prompt?.content ?? '';
   }
 
-  private createPrompt() {
+  private async createPrompt() {
     const now = nowIso();
     const prompt: PromptConfig = {
       id: uid('prompt'),
@@ -817,7 +864,7 @@ class PopupApp {
     };
     this.store.prompts.unshift(prompt);
     this.selectedPromptId = prompt.id;
-    this.persist();
+    await this.persist();
   }
 
   private async savePrompt() {
@@ -838,8 +885,10 @@ class PopupApp {
       this.store.prompts.unshift(prompt);
     }
     this.selectedPromptId = promptId;
-    await this.persist();
-      this.showStatus(elements.promptStatus, t('prompt__statusSaved'), 'success');
+    if (!await this.persist()) {
+      return;
+    }
+    this.showStatus(elements.promptStatus, t('prompt__statusSaved'), 'success');
   }
 
   private confirmDeletePrompt() {
@@ -851,7 +900,9 @@ class PopupApp {
       if (this.store.featureSettings.defaultPromptId === prompt.id) {
         this.store.featureSettings.defaultPromptId = null;
       }
-      await this.persist();
+      if (!await this.persist()) {
+        return;
+      }
       this.showStatus(elements.promptStatus, t('prompt__statusDeleted'), 'success');
     });
   }
@@ -878,7 +929,9 @@ class PopupApp {
           this.store.featureSettings.defaultPromptId
         );
         this.selectedPromptId = this.store.featureSettings.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
-        await this.persist();
+        if (!await this.persist()) {
+          return;
+        }
         this.showStatus(
           elements.promptStatus,
           t('config__statusImported', {
