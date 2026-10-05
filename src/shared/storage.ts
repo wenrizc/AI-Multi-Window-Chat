@@ -366,6 +366,31 @@ async function initialize(): Promise<StorageMode> {
   return 'v5';
 }
 
+// Several extension surfaces can initialize storage at the same time (for
+// example, two chat windows opening while the service worker starts). Share one
+// migration/initialization promise so they cannot race on the schema keys.
+let initializationPromise: Promise<StorageMode> | null = null;
+
+function getStorageMode(): Promise<StorageMode> {
+  if (!initializationPromise) {
+    const promise = initialize();
+    initializationPromise = promise;
+    promise.then(
+      () => {
+        if (initializationPromise === promise) {
+          initializationPromise = null;
+        }
+      },
+      () => {
+        if (initializationPromise === promise) {
+          initializationPromise = null;
+        }
+      }
+    );
+  }
+  return initializationPromise;
+}
+
 async function migrateV4ToV5(legacy: LegacyStore): Promise<void> {
   await write({ [MIGRATION_KEY]: { status: 'migrating', startedAt: nowIso() } });
 
@@ -413,7 +438,7 @@ async function readV5Config(): Promise<StorageConfig> {
   const meta = (await readMetaRaw()) ?? createEmptyConfig();
   const { config, changed } = normalizeConfig(meta);
   if (changed) {
-    await write({ [META_KEY]: config });
+    await enqueue(() => write({ [META_KEY]: config }));
   }
   return config;
 }
@@ -547,22 +572,25 @@ async function writeV4Store(store: RootStore): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 export async function getConfig(): Promise<StorageConfig> {
-  return (await initialize()) === 'v5' ? readV5Config() : (await readV4Store());
+  return (await getStorageMode()) === 'v5' ? readV5Config() : (await readV4Store());
 }
 
 export async function saveConfig(config: StorageConfig): Promise<StorageConfig> {
   const { config: normalized } = normalizeConfig(config);
-  if ((await initialize()) === 'v5') {
-    await write({ [META_KEY]: normalized });
-  } else {
-    const legacy = await readV4Store();
-    await writeV4Store({ ...legacy, ...normalized });
-  }
-  return normalized;
+  const mode = await getStorageMode();
+  return enqueue(async () => {
+    if (mode === 'v5') {
+      await write({ [META_KEY]: normalized });
+    } else {
+      const legacy = await readV4Store();
+      await writeV4Store({ ...legacy, ...normalized });
+    }
+    return normalized;
+  });
 }
 
 export async function getChatSession(chatId: string): Promise<ChatSession | null> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     return readV5Session(chatId);
   }
   const store = await readV4Store();
@@ -575,7 +603,7 @@ export async function upsertChatSession(session: ChatSession): Promise<ChatSessi
     throw new Error('Cannot persist an invalid chat session.');
   }
 
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     return enqueue(() => performUpsertSession(normalized));
   }
 
@@ -596,7 +624,7 @@ export async function updateChatSession(
   chatId: string,
   updater: (session: ChatSession) => ChatSession | void
 ): Promise<ChatSession | null> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     return enqueue(async () => {
       const existing = await readV5Session(chatId);
       if (!existing) {
@@ -625,7 +653,7 @@ export async function updateChatSession(
 }
 
 export async function deleteChatSession(chatId: string): Promise<void> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     return enqueue(() => performDeleteSession(chatId));
   }
   return enqueue(async () => {
@@ -636,7 +664,7 @@ export async function deleteChatSession(chatId: string): Promise<void> {
 }
 
 export async function clearChatSessions(): Promise<void> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     return enqueue(performClearSessions);
   }
   return enqueue(async () => {
@@ -647,7 +675,7 @@ export async function clearChatSessions(): Promise<void> {
 }
 
 export async function listChatSummaries(): Promise<ChatIndexEntry[]> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     return readV5Index();
   }
   const store = await readV4Store();
@@ -655,7 +683,7 @@ export async function listChatSummaries(): Promise<ChatIndexEntry[]> {
 }
 
 export async function getAllChatSessions(): Promise<ChatSession[]> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     const index = await readV5Index();
     if (index.length === 0) {
       return [];
@@ -675,7 +703,7 @@ export async function getAllChatSessions(): Promise<ChatSession[]> {
 }
 
 export async function getStore(): Promise<RootStore> {
-  if ((await initialize()) === 'v5') {
+  if ((await getStorageMode()) === 'v5') {
     const config = await readV5Config();
     return { ...config, chatHistory: await getAllChatSessions() };
   }
@@ -689,7 +717,7 @@ export async function ensureStore(): Promise<RootStore> {
 
 /** Full-store write; only used by tests and one-off migrations. */
 export async function saveStore(store: RootStore): Promise<void> {
-  if ((await initialize()) !== 'v5') {
+  if ((await getStorageMode()) !== 'v5') {
     await enqueue(() => writeV4Store(store));
     return;
   }

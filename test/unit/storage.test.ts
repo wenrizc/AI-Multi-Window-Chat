@@ -161,6 +161,21 @@ describe('initialization', () => {
     expect((state.storage[MIGRATION_KEY] as { status: string }).status).toBe('done');
   });
 
+  it('serializes concurrent initialization so migration runs once', async () => {
+    const state = getChromeState();
+    const legacy = createEmptyStore();
+    legacy.providers.push(createProvider({ id: 'p1' }));
+    legacy.chatHistory.push(createChatSession({ chatId: 'c1', title: 'Chat 1' }));
+    state.seedStorage({ [LEGACY_STORAGE_KEY]: legacy });
+
+    const [first, second] = await Promise.all([ensureStore(), ensureStore()]);
+
+    expect(first.providers).toHaveLength(1);
+    expect(second.providers).toHaveLength(1);
+    expect(state.storage[LEGACY_STORAGE_KEY]).toBeUndefined();
+    expect(readIndex(state).map((entry) => entry.chatId)).toEqual(['c1']);
+  });
+
   it('repairs fixed defaults and normalizes missing model/chat fields during migration', async () => {
     const state = getChromeState();
     const legacy = {
