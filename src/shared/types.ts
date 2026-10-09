@@ -190,6 +190,7 @@ export const STORAGE_SCHEMA_VERSION = 5 as const;
 export interface ChatRequestMessage {
   role: ChatRole;
   content: string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
+  reasoningContent?: string | null;
 }
 
 export type ProviderContent = ChatRequestMessage['content'];

@@ -160,10 +160,20 @@ function toChatMessages(messages: ProviderMessage[], includeReasoningContent: bo
       return chatMessage;
     }
 
-    return {
+    const chatMessage: Record<string, unknown> = {
       role: message.role,
       content: message.content
     };
+
+    // DeepSeek/Qwen-compatible thinking APIs require the assistant's
+    // reasoning_content to be replayed on subsequent turns, even when the
+    // assistant message did not contain a tool call.
+    if (includeReasoningContent && message.role === 'assistant'
+      && typeof message.reasoningContent === 'string') {
+      chatMessage.reasoning_content = message.reasoningContent;
+    }
+
+    return chatMessage;
   });
 }
 

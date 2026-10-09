@@ -28,6 +28,36 @@ beforeEach(() => {
 });
 
 describe('chat completions parsing', () => {
+  it('replays reasoning_content for ordinary assistant history messages', async () => {
+    server.use(
+      http.post(`${TEST_BASE_URL}/chat/completions`, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        const messages = body.messages as Array<Record<string, unknown>>;
+        expect(messages[0]).toEqual({
+          role: 'assistant',
+          content: 'previous answer',
+          reasoning_content: 'previous reasoning'
+        });
+        return HttpResponse.json({ choices: [{ message: { content: 'next answer' } }] });
+      })
+    );
+
+    const result = await completeProviderTurn({
+      provider: createProvider({
+        modelCatalog: [createModel({ modelId: 'test-model', reasoningFormat: 'reasoning_content' })]
+      }),
+      model: createModel({ modelId: 'test-model', reasoningFormat: 'reasoning_content' }),
+      messages: [
+        { role: 'assistant', content: 'previous answer', reasoningContent: 'previous reasoning' },
+        { role: 'user', content: 'continue' }
+      ],
+      generationParams: { temperature: null },
+      signal: new AbortController().signal
+    });
+
+    expect(result.content).toBe('next answer');
+  });
+
   it('normalizes request headers/body and joins content parts', async () => {
     server.use(
       http.post(`${TEST_BASE_URL}/chat/completions`, async ({ request }) => {
