@@ -85,6 +85,17 @@ type AssistantRenderState = {
 function getExpectedMessageOrigin(): string {
   // The embedded chat receives messages from the page that owns the iframe.
   // A standalone extension page receives them from the extension itself.
+  if (window.parent !== window) {
+    const parentOrigin = new URLSearchParams(window.location.search).get('parentOrigin');
+    if (parentOrigin) {
+      try {
+        const origin = new URL(parentOrigin).origin;
+        if (origin !== 'null') return origin;
+      } catch {
+        // Older or malformed iframe URLs still use the referrer fallback.
+      }
+    }
+  }
   if (document.referrer) {
     try {
       return new URL(document.referrer).origin;

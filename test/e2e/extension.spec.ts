@@ -122,3 +122,28 @@ test('completes a chat round trip through the real extension', async () => {
   expect(requests.length).toBeGreaterThan(0);
   expect(requests[requests.length - 1].path).toBe('/v1/chat/completions');
 });
+
+test('opens embedded settings when the host suppresses the referrer', async () => {
+  const page = await context.newPage();
+  const hostUrl = `${mock.url}/settings-host`;
+  await page.route(hostUrl, route => route.fulfill({
+    contentType: 'text/html',
+    headers: { 'Referrer-Policy': 'no-referrer' },
+    body: '<!doctype html><html><body><p>Settings test host</p></body></html>'
+  }));
+  await page.goto(hostUrl);
+  await page.keyboard.press('Alt+n');
+  const chat = page.frameLocator('.ai-chat-iframe');
+  await expect(chat.locator('#messageInput')).toBeVisible();
+  expect(await chat.locator('body').evaluate(() => document.referrer)).toBe('');
+  await page.locator('.ai-settings-btn').click();
+  await expect(chat.locator('#settingsPanel')).toBeVisible();
+  await expect(chat.locator('#profileSelect')).toHaveValue('e2e-provider');
+  await chat.locator('#settingsCloseBtn').click();
+  await expect(chat.locator('#settingsPanel')).toBeHidden();
+  await page.locator('.ai-settings-btn').click();
+  await expect(chat.locator('#settingsPanel')).toBeVisible();
+  await page.locator('.ai-settings-btn').click();
+  await expect(chat.locator('#settingsPanel')).toBeHidden();
+  await page.close();
+});

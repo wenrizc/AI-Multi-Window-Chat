@@ -296,6 +296,9 @@ class AIMultiWindow {
     const windowId = `ai-window-${Date.now()}-${this.counter}`;
     const chatId = chat?.chatId || uid('chat');
     const title = chat?.title || this.createDefaultWindowTitle();
+    const chatUrl = new URL(chrome.runtime.getURL('chat-window.html'));
+    // Referrer policies can hide the host origin from the extension iframe.
+    chatUrl.searchParams.set('parentOrigin', window.location.origin);
     const wrapper = document.createElement('div');
     wrapper.className = 'ai-multi-window';
     wrapper.id = windowId;
@@ -341,7 +344,7 @@ class AIMultiWindow {
         </div>
       </div>
       <div class="ai-window-content">
-        <iframe class="ai-chat-iframe" src="${chrome.runtime.getURL('chat-window.html')}"></iframe>
+        <iframe class="ai-chat-iframe" src="${escapeHtmlAttr(chatUrl.href)}"></iframe>
       </div>
       <div class="ai-resize-handle ai-resize-e" data-direction="e"></div>
       <div class="ai-resize-handle ai-resize-w" data-direction="w"></div>
