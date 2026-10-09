@@ -71,6 +71,27 @@ beforeEach(() => {
 });
 
 describe('popup providers', () => {
+  it('saves custom thinking levels independently for each model and allows removal', async () => {
+    await bootPopup({
+      providers: [createProvider({ id: 'p1', name: 'Alpha' }), createProvider({ id: 'p2', name: 'Beta' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: 'p1' }
+    });
+    setValue(el<HTMLTextAreaElement>('customEffortsInput'), 'xhigh, minimal，xhigh\nultra, high');
+    await userEvent.click(el<HTMLButtonElement>('saveBtn'));
+    await waitFor(() => storedStore().providers.find(p => p.id === 'p1')?.modelCatalog[0].customReasoningEfforts?.length === 3);
+    expect(storedStore().providers.find(p => p.id === 'p1')?.modelCatalog[0].customReasoningEfforts).toEqual(['xhigh', 'minimal', 'ultra']);
+    await userEvent.click(document.querySelector('#profileList [data-id="p2"]') as HTMLElement);
+    expect(el<HTMLTextAreaElement>('customEffortsInput').value).toBe('');
+    setValue(el<HTMLTextAreaElement>('customEffortsInput'), 'very_high');
+    await userEvent.click(el<HTMLButtonElement>('saveBtn'));
+    await waitFor(() => storedStore().providers.find(p => p.id === 'p2')?.modelCatalog[0].customReasoningEfforts?.[0] === 'very_high');
+    await userEvent.click(document.querySelector('#profileList [data-id="p1"]') as HTMLElement);
+    expect(el<HTMLTextAreaElement>('customEffortsInput').value).toBe('xhigh, minimal, ultra');
+    setValue(el<HTMLTextAreaElement>('customEffortsInput'), '');
+    await userEvent.click(el<HTMLButtonElement>('saveBtn'));
+    await waitFor(() => storedStore().providers.find(p => p.id === 'p1')?.modelCatalog[0].customReasoningEfforts?.length === 0);
+    expect(storedStore().providers.find(p => p.id === 'p2')?.modelCatalog[0].customReasoningEfforts).toEqual(['very_high']);
+  });
   it('escapes imported provider ids when rendering attributes', async () => {
     const maliciousId = 'provider" onmouseover="alert(1)';
     await bootPopup({

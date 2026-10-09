@@ -6,6 +6,7 @@ import {
   saveConfig
 } from '../shared/storage';
 import { isStorageQuotaError } from '../shared/errors';
+import { normalizeCustomReasoningEfforts } from '../shared/reasoning';
 import type {
   FeatureSettings,
   PromptConfig,
@@ -97,6 +98,7 @@ const elements = {
   addHeaderBtn: document.getElementById('addHeaderBtn') as HTMLButtonElement,
   transportSelect: document.getElementById('transportSelect') as HTMLSelectElement,
   reasoningFormatSelect: document.getElementById('reasoningFormatSelect') as HTMLSelectElement,
+  customEffortsInput: document.getElementById('customEffortsInput') as HTMLTextAreaElement,
   supportsStreamingCheckbox: document.getElementById('supportsStreamingCheckbox') as HTMLInputElement,
   temperatureInput: document.getElementById('temperatureInput') as HTMLInputElement,
   tavilyApiKey: document.getElementById('tavilyApiKey') as HTMLInputElement,
@@ -553,6 +555,7 @@ class PopupApp {
     this.renderHeaderRows(provider.headers);
     elements.transportSelect.value = provider.transport;
     elements.reasoningFormatSelect.value = model?.reasoningFormat ?? 'none';
+    elements.customEffortsInput.value = (model?.customReasoningEfforts ?? []).join(', ');
     elements.supportsStreamingCheckbox.checked = model?.supportsStreaming ?? true;
     elements.temperatureInput.value = provider.defaultGenerationParams.temperature?.toString() ?? '';
   }
@@ -565,6 +568,7 @@ class PopupApp {
       elements.modelName,
       elements.temperatureInput
     ].forEach((input) => { input.value = ''; });
+    elements.customEffortsInput.value = '';
     elements.transportSelect.value = 'chat_completions';
     elements.reasoningFormatSelect.value = 'none';
     elements.supportsStreamingCheckbox.checked = true;
@@ -723,7 +727,8 @@ class PopupApp {
           modelId: elements.modelName.value.trim(),
           displayName: elements.modelName.value.trim(),
           supportsStreaming: elements.supportsStreamingCheckbox.checked,
-          reasoningFormat: resolveReasoningFormat(elements.reasoningFormatSelect.value)
+          reasoningFormat: resolveReasoningFormat(elements.reasoningFormatSelect.value),
+          customReasoningEfforts: normalizeCustomReasoningEfforts(elements.customEffortsInput.value)
         }
       ],
       createdAt: current?.createdAt ?? now,

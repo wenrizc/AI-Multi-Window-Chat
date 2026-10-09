@@ -45,6 +45,28 @@ function readChat(state: State, chatId: string): ChatSession | undefined {
 }
 
 describe('createEmptyStore', () => {
+  it('migrates global thinking levels only to the default model', async () => {
+    const state = getChromeState();
+    const config = createEmptyConfig();
+    config.providers = [createProvider({ id: 'p1' }), createProvider({ id: 'p2' })];
+    config.featureSettings.defaultProviderId = 'p1';
+    state.seedStorage({ [META_KEY]: config, customReasoningEfforts: ['xhigh', 'xhigh', 'high'] });
+    const saved = await getConfig();
+    expect(saved.providers[0].modelCatalog[0].customReasoningEfforts).toEqual(['xhigh']);
+    expect(saved.providers[1].modelCatalog[0].customReasoningEfforts).toBeUndefined();
+    expect(state.storage.customReasoningEfforts).toBeUndefined();
+  });
+
+  it('preserves explicitly saved model levels during global migration', async () => {
+    const state = getChromeState();
+    const config = createEmptyConfig();
+    config.providers = [createProvider({ id: 'p1' })];
+    config.providers[0].modelCatalog[0].customReasoningEfforts = [];
+    config.featureSettings.defaultProviderId = 'p1';
+    state.seedStorage({ [META_KEY]: config, customReasoningEfforts: ['xhigh'] });
+    expect((await getConfig()).providers[0].modelCatalog[0].customReasoningEfforts).toEqual([]);
+    expect(state.storage.customReasoningEfforts).toBeUndefined();
+  });
   it('ships the v5 fixed defaults (streaming/search disabled)', () => {
     const store = createEmptyStore();
     expect(store.schemaVersion).toBe(5);

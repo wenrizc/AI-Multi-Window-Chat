@@ -10,6 +10,7 @@ import {
   createEmptyConfig
 } from './constants';
 import { StorageQuotaError, isQuotaErrorText } from './errors';
+import { normalizeCustomReasoningEfforts } from './reasoning';
 import type {
   ChatIndexEntry,
   ChatSession,
@@ -137,6 +138,11 @@ export function normalizeConfig(config: StorageConfig): { config: StorageConfig;
       changed = true;
     }
     for (const model of provider.modelCatalog) {
+      if (model.customReasoningEfforts !== undefined) {
+        const efforts = normalizeCustomReasoningEfforts(model.customReasoningEfforts);
+        if (JSON.stringify(efforts) !== JSON.stringify(model.customReasoningEfforts)) changed = true;
+        model.customReasoningEfforts = efforts;
+      }
       if (typeof model.supportsStreaming !== 'boolean') {
         model.supportsStreaming = true;
         changed = true;
@@ -353,7 +359,6 @@ async function initialize(): Promise<StorageMode> {
   if (legacy) {
     try {
       await migrateV4ToV5(legacy);
-      return 'v5';
     } catch (error) {
       console.error('Schema v4 -> v5 migration failed; continuing on the v4 store.', error);
       return 'v4';
@@ -363,7 +368,25 @@ async function initialize(): Promise<StorageMode> {
   if (!(await readMetaRaw())) {
     await write({ [META_KEY]: createEmptyConfig(), [CHAT_INDEX_KEY]: [] });
   }
+  await migrateCustomReasoningEfforts();
   return 'v5';
+}
+
+/** Move the former global list to the default model without affecting others. */
+async function migrateCustomReasoningEfforts(): Promise<void> {
+  const stored = await chrome.storage.local.get('customReasoningEfforts');
+  if (stored.customReasoningEfforts === undefined) return;
+  await enqueue(async () => {
+    const config = await readMetaRaw();
+    const provider = config?.providers?.find(item => item.id === config.featureSettings.defaultProviderId);
+    const model = provider?.modelCatalog?.find(item => item.modelId === provider.defaultModel);
+    if (!config || !model) return;
+    if (model.customReasoningEfforts === undefined) {
+      model.customReasoningEfforts = normalizeCustomReasoningEfforts(stored.customReasoningEfforts);
+      await write({ [META_KEY]: config });
+    }
+    await chrome.storage.local.remove('customReasoningEfforts');
+  });
 }
 
 // Several extension surfaces can initialize storage at the same time (for

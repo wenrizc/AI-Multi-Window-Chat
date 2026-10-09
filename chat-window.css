@@ -934,28 +934,3 @@ body {
     border-radius: 10px;
   }
 }
-
-.chat-settings-field textarea {
-  width: 100%;
-  resize: vertical;
-  min-height: 54px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 9px;
-  background: var(--surface-card);
-  color: var(--text-primary);
-  font: inherit;
-}
-#saveCustomEffortsBtn {
-  padding: 8px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 9px;
-  background: var(--surface-accent);
-  color: var(--accent);
-  cursor: pointer;
-}
-#saveCustomEffortsBtn:disabled { opacity: .6; cursor: wait; }
-.chat-settings-field textarea:focus-visible, #saveCustomEffortsBtn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}

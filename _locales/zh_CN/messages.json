@@ -1099,19 +1099,7 @@
     "description": "chat__customEfforts"
   },
   "chat__customEffortsHelp": {
-    "message": "支持多个值，用逗号或换行分隔。保存后加入下拉列表，每次仅发送所选值；删除后保存即可移除。",
+    "message": "仅对当前模型生效。用逗号或换行分隔多个档位，保存模型配置后可在聊天中选择；留空可移除。",
     "description": "chat__customEffortsHelp"
-  },
-  "chat__saveCustomEfforts": {
-    "message": "保存自定义档位",
-    "description": "chat__saveCustomEfforts"
-  },
-  "chat__customEffortsSaved": {
-    "message": "自定义档位已保存",
-    "description": "chat__customEffortsSaved"
-  },
-  "chat__customEffortsFailed": {
-    "message": "保存失败，请重试",
-    "description": "chat__customEffortsFailed"
   }
 }

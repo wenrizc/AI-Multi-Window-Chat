@@ -1099,19 +1099,7 @@
     "description": "chat__customEfforts"
   },
   "chat__customEffortsHelp": {
-    "message": "Separate multiple values with commas or new lines. Save to update the selector. Each request sends one selected value; delete values and save to remove them.",
+    "message": "Applies only to this model. Separate levels with commas or new lines, then save the model configuration. Leave empty to remove custom levels.",
     "description": "chat__customEffortsHelp"
-  },
-  "chat__saveCustomEfforts": {
-    "message": "Save custom levels",
-    "description": "chat__saveCustomEfforts"
-  },
-  "chat__customEffortsSaved": {
-    "message": "Custom levels saved",
-    "description": "chat__customEffortsSaved"
-  },
-  "chat__customEffortsFailed": {
-    "message": "Could not save. Please try again.",
-    "description": "chat__customEffortsFailed"
   }
 }

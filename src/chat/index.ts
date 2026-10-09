@@ -1,4 +1,5 @@
-import { PORT_NAME } from '../shared/constants';
+import { PORT_NAME, META_KEY, LEGACY_STORAGE_KEY } from '../shared/constants';
+import { normalizeCustomReasoningEfforts } from '../shared/reasoning';
 import { getConfig, upsertChatSession } from '../shared/storage';
 import { findLatestLeafUnder, getSiblingInfo, resolveActivePath } from '../shared/conversation-tree';
 import type { FailureCode } from '../shared/errors';
@@ -138,7 +139,6 @@ class ChatWindowApp {
   private streamingEnabled = true;
   private streamingOverride: boolean | null = null;
   private reasoningEffort: ReasoningEffort = 'default';
-  private customEfforts: string[] = [];
   private attachments: ChatAttachment[] = [];
   private currentMode: PersistedMessage['mode'] = 'chat';
   private composerStatusTimer: number | null = null;
@@ -178,9 +178,6 @@ class ChatWindowApp {
     searchToggle: document.getElementById('searchToggle') as HTMLInputElement,
     streamingToggle: document.getElementById('streamingToggle') as HTMLInputElement,
     reasoningEffortSelect: document.getElementById('reasoningEffortSelect') as HTMLSelectElement,
-    customEffortsInput: document.getElementById('customEffortsInput') as HTMLTextAreaElement,
-    saveCustomEffortsBtn: document.getElementById('saveCustomEffortsBtn') as HTMLButtonElement,
-    customEffortsStatus: document.getElementById('customEffortsStatus') as HTMLElement,
     attachmentInput: document.getElementById('attachmentInput') as HTMLInputElement,
     attachmentBtn: document.getElementById('attachmentBtn') as HTMLButtonElement,
     attachmentTray: document.getElementById('attachmentTray') as HTMLElement,
@@ -222,16 +219,9 @@ class ChatWindowApp {
     });
 
     await this.reloadStore();
-    const saved = await chrome.storage.local.get('customReasoningEfforts');
-    this.customEfforts = this.parseCustomEfforts(Array.isArray(saved.customReasoningEfforts)
-      ? saved.customReasoningEfforts.filter((value: unknown) => typeof value === 'string').join('\n')
-      : '');
-    this.renderReasoningOptions();
     chrome.storage.onChanged?.addListener((changes, area) => {
-      if (area === 'local' && changes.customReasoningEfforts) {
-        const values = changes.customReasoningEfforts.newValue;
-        this.customEfforts = this.parseCustomEfforts(Array.isArray(values) ? values.filter((v: unknown) => typeof v === 'string').join('\n') : '');
-        this.renderReasoningOptions();
+      if (area === 'local' && (changes[META_KEY] || changes[LEGACY_STORAGE_KEY])) {
+        void this.reloadStore().then(() => this.renderSelectors()).catch(error => this.reportAsyncFailure(error));
       }
     });
     this.renderSelectors();
@@ -412,9 +402,6 @@ class ChatWindowApp {
     this.elements.reasoningEffortSelect.addEventListener('change', () => {
       this.reasoningEffort = (this.elements.reasoningEffortSelect.value || 'default') as ReasoningEffort;
     });
-    this.elements.saveCustomEffortsBtn.addEventListener('click', () => {
-      void this.saveCustomEfforts().catch((error) => this.reportAsyncFailure(error));
-    });
     document.addEventListener('pointerdown', (event) => {
       if (!this.settingsOpen) {
         return;
@@ -432,15 +419,10 @@ class ChatWindowApp {
     });
   }
 
-  private parseCustomEfforts(value: string): string[] {
-    const builtins = new Set(['default', 'none', 'low', 'medium', 'high', 'max']);
-    return [...new Set(value.split(/[,，;；\r\n]+/).map((v) => v.trim()).filter((v) => v && !builtins.has(v)))];
-  }
-
   private renderReasoningOptions() {
     const select = this.elements.reasoningEffortSelect;
     select.querySelectorAll('[data-custom-effort]').forEach((option) => option.remove());
-    for (const value of this.customEfforts) {
+    for (const value of normalizeCustomReasoningEfforts(this.getCurrentModel()?.customReasoningEfforts)) {
       const option = new Option(value, value);
       option.dataset.customEffort = 'true';
       select.add(option);
@@ -449,22 +431,6 @@ class ChatWindowApp {
       this.reasoningEffort = 'default';
     }
     select.value = this.reasoningEffort;
-    this.elements.customEffortsInput.value = this.customEfforts.join(', ');
-  }
-
-  private async saveCustomEfforts() {
-    const values = this.parseCustomEfforts(this.elements.customEffortsInput.value);
-    this.elements.saveCustomEffortsBtn.disabled = true;
-    try {
-      await chrome.storage.local.set({ customReasoningEfforts: values });
-      this.customEfforts = values;
-      this.renderReasoningOptions();
-      this.elements.customEffortsStatus.textContent = t('chat__customEffortsSaved');
-    } catch {
-      this.elements.customEffortsStatus.textContent = t('chat__customEffortsFailed');
-    } finally {
-      this.elements.saveCustomEffortsBtn.disabled = false;
-    }
   }
 
   private async addFiles(files: File[]) {
@@ -673,6 +639,7 @@ class ChatWindowApp {
   }
 
   private syncSessionSettingsFromModel() {
+    this.renderReasoningOptions();
     const model = this.getCurrentModel();
     const modelStreaming = model?.supportsStreaming ?? true;
 

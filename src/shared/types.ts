@@ -42,6 +42,7 @@ export interface ModelConfig {
   displayName: string;
   supportsStreaming: boolean;
   reasoningFormat: ReasoningFormat;
+  customReasoningEfforts?: string[];
 }
 
 export interface GenerationParams {

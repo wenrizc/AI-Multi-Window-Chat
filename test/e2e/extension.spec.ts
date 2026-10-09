@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createChatSession, createPersistedMessage } from '../helpers/factories';
+import type { StorageConfig } from '../../src/shared/types';
 
 /**
  * End-to-end test against the real built extension in `release/`.
@@ -213,4 +214,40 @@ test('branches an embedded conversation with its history and continues independe
   });
   expect(original).toEqual(session);
   await page.close();
+});
+
+test('updates open chats when model-specific thinking levels are saved', async () => {
+  await serviceWorker.evaluate(async () => {
+    const stored = await chrome.storage.local.get('app_meta_v5');
+    const config = stored.app_meta_v5 as StorageConfig;
+    const provider = config.providers[0];
+    provider.modelCatalog[0].customReasoningEfforts = ['xhigh'];
+    const second = structuredClone(provider);
+    second.id = 'second-thinking-model';
+    second.name = 'Second thinking model';
+    second.modelCatalog[0].customReasoningEfforts = ['minimal'];
+    config.providers.push(second);
+    await chrome.storage.local.set({ app_meta_v5: config });
+  });
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat-window.html`);
+  await chat.evaluate(() => window.postMessage({ type: 'TOGGLE_SETTINGS_PANEL' }, window.location.origin));
+  const efforts = chat.locator('#reasoningEffortSelect');
+  await expect(efforts.locator('option[value="xhigh"]')).toHaveCount(1);
+  await efforts.selectOption('xhigh');
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await expect(popup.locator('#customEffortsInput')).toHaveValue('xhigh');
+  await popup.locator('#customEffortsInput').fill('ultra');
+  await popup.locator('#saveBtn').click();
+  await expect(efforts.locator('option[value="ultra"]')).toHaveCount(1);
+  await expect(efforts.locator('option[value="xhigh"]')).toHaveCount(0);
+  await expect(efforts).toHaveValue('default');
+  await efforts.selectOption('ultra');
+  await chat.locator('#profileSelect').selectOption('second-thinking-model');
+  await expect(efforts.locator('option[value="minimal"]')).toHaveCount(1);
+  await expect(efforts.locator('option[value="ultra"]')).toHaveCount(0);
+  await expect(efforts).toHaveValue('default');
+  await popup.close();
+  await chat.close();
 });
