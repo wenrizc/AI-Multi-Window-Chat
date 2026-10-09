@@ -89,6 +89,7 @@ npm run test:integration # background / provider / fake-LLM tests
 npm run test:browser    # component tests in real Chromium
 npm run test:coverage   # coverage report (text, html, lcov)
 npm run test:e2e        # loads the built release/ extension in Chromium
+npm run test:e2e:deepseek # builds and tests the extension with the real DeepSeek API
 ```
 
 See [TESTING.md](TESTING.md) for the architecture, fake LLM setup, and how to add new tests.

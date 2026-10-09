@@ -137,6 +137,57 @@ If the extension needs a specific Chromium, Playwright is pinned to a version
 whose bundled browser is available in the environment. Do not upgrade
 Playwright without verifying a browser install succeeds.
 
+## DeepSeek live extension tests
+
+This opt-in suite loads the freshly built extension in Playwright's bundled
+Chromium and calls the official `https://api.deepseek.com/chat/completions`
+endpoint with bearer authentication. It makes four real model requests for a
+full run; API charges and network availability apply. The default mock E2E and
+Vitest suites do not load this suite or require a key.
+
+Requires Node.js 22+ (native `.env` loading). Install dependencies and Chromium:
+
+```bash
+npm ci
+npx playwright install chromium
+```
+
+Create `.env` in the repository root using `.env.example`:
+
+```dotenv
+DEEPSEEK_API_KEY=your-api-key
+DEEPSEEK_MODEL=deepseek-flash
+```
+
+The existing `key=...` variable is accepted if `DEEPSEEK_API_KEY` is empty.
+Existing shell environment variables take precedence over `.env`. The model
+can be changed with `DEEPSEEK_MODEL`; the endpoint always uses DeepSeek's
+official API. Keys are not embedded in the build or logged by the runner.
+
+```bash
+npm run test:e2e:deepseek
+npm run test:e2e:deepseek -- --headed
+npm run test:e2e:deepseek -- --grep non-streaming
+npm run test:e2e:deepseek -- --list
+```
+
+The runner validates the key, builds `release/`, and forwards additional options
+to Playwright. Each test uses an isolated temporary browser profile, seeds the
+schema v5 provider configuration in extension storage, and serves a local HTML
+page to exercise the real injected content script and chat iframe. Tests cover
+selection toolbar injection, Alt+N, streamed/non-streamed replies, a follow-up
+that recalls a random token, token usage, session/index persistence, and restoring
+the saved conversation after a host-page reload. Exact prose is not asserted,
+but model failure to follow the token instruction will fail the test.
+
+Live tests have a three-minute timeout and no automatic retries. Traces,
+screenshots, and video are disabled because traces can contain storage values
+and authorization headers. Browser profiles are removed when the context closes.
+Do not enable tracing for these tests with a real key.
+
+References: [Playwright extension loading](https://playwright.dev/docs/chrome-extensions)
+and [DeepSeek official quickstart](https://api-docs.deepseek.com/zh-cn/).
+
 ## Adding tests
 
 1. Pick the lowest layer that can exercise the code: pure logic in `unit`,
