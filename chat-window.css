@@ -621,8 +621,7 @@ body {
   margin-top: 2px;
 }
 
-.message-action-btn,
-.message-model-select {
+.message-action-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -638,8 +637,7 @@ body {
   transition: filter 0.18s ease, transform 0.18s ease;
 }
 
-.message-action-btn:hover,
-.message-model-select:hover {
+.message-action-btn:hover {
   filter: brightness(0.98);
 }
 
@@ -649,10 +647,6 @@ body {
 
 .message-action-btn svg {
   display: block;
-}
-
-.message-model-select {
-  max-width: 180px;
 }
 
 .message-edit-editor {

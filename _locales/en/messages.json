@@ -417,10 +417,6 @@
     "message": "Regenerate",
     "description": "Regenerate an assistant message"
   },
-  "chat__btnRegenerateWithModel": {
-    "message": "Regenerate with model",
-    "description": "Regenerate an assistant message using another provider"
-  },
   "chat__btnBranch": {
     "message": "Continue from here",
     "description": "Branch the conversation into a new window from this message"

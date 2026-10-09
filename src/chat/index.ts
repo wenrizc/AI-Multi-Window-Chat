@@ -795,23 +795,6 @@ class ChatWindowApp {
         void this.regenerateMessage(message).catch((error) => this.reportAsyncFailure(error));
       });
       actions.appendChild(regenerateBtn);
-
-      if (this.providers.length > 0) {
-        const modelSelect = document.createElement('select');
-        modelSelect.className = 'message-model-select';
-        modelSelect.title = t('chat__btnRegenerateWithModel');
-        modelSelect.setAttribute('aria-label', t('chat__btnRegenerateWithModel'));
-        modelSelect.innerHTML = `<option value="">${escapeHtml(t('chat__btnRegenerateWithModel'))}</option>`
-          + this.providers.map((provider) => `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.name)}</option>`).join('');
-        modelSelect.addEventListener('change', () => {
-          const providerId = modelSelect.value || this.profileId;
-          modelSelect.value = '';
-          if (providerId) {
-            void this.regenerateMessage(message, providerId).catch((error) => this.reportAsyncFailure(error));
-          }
-        });
-        actions.appendChild(modelSelect);
-      }
     }
 
     const branchBtn = this.createActionButton('branch', t('chat__btnBranch'), BRANCH_ICON_SVG);
@@ -1286,14 +1269,14 @@ class ChatWindowApp {
     }
   }
 
-  /** Regenerates an assistant message, optionally using a different provider. */
-  private async regenerateMessage(target: PersistedMessage, providerId?: string | null) {
+  /** Regenerates an assistant message using the selected provider. */
+  private async regenerateMessage(target: PersistedMessage) {
     if (this.isLoading || this.requestPreparationInFlight || target.role !== 'assistant') {
       return;
     }
     this.requestPreparationInFlight = true;
     try {
-      const provider = this.providers.find((item) => item.id === (providerId || this.profileId));
+      const provider = this.providers.find((item) => item.id === this.profileId);
       if (!provider) {
         this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
         return;

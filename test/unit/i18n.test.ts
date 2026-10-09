@@ -52,7 +52,6 @@ const requiredKeys = [
   'chat__btnSaveEdit',
   'chat__btnCancelEdit',
   'chat__btnRegenerate',
-  'chat__btnRegenerateWithModel',
   'chat__btnBranch',
   'chat__branchSuffix',
   'chat__versionPrev',

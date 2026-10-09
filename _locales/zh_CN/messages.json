@@ -417,10 +417,6 @@
     "message": "重新生成",
     "description": "重新生成助手消息"
   },
-  "chat__btnRegenerateWithModel": {
-    "message": "换模型重答",
-    "description": "使用其它模型配置重新生成助手消息"
-  },
   "chat__btnBranch": {
     "message": "从这里继续",
     "description": "从该消息分支到新窗口"
