@@ -36,7 +36,8 @@
     "test:browser": "vitest run --project browser",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:deepseek": "node scripts/test-deepseek.mjs"
   },
   "devDependencies": {
     "@copilotkit/aimock": "^1.27.3",
