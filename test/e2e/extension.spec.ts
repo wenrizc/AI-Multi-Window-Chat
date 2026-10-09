@@ -137,8 +137,16 @@ test('opens embedded settings when the host suppresses the referrer', async () =
   const chat = page.frameLocator('.ai-chat-iframe');
   await expect(chat.locator('#messageInput')).toBeVisible();
   expect(await chat.locator('body').evaluate(() => document.referrer)).toBe('');
+  const windowElement = page.locator('.ai-multi-window');
+  await windowElement.evaluate(element => {
+    Object.assign((element as HTMLElement).style, {
+      width: '360px', height: '500px', left: '34px', top: '70px', animation: 'none'
+    });
+  });
+  const originalBounds = await windowElement.boundingBox();
   await page.locator('.ai-settings-btn').click();
   await expect(chat.locator('#settingsPanel')).toBeVisible();
+  expect(await windowElement.boundingBox()).toEqual(originalBounds);
   await expect(chat.locator('#profileSelect')).toHaveValue('e2e-provider');
   await chat.locator('#settingsCloseBtn').click();
   await expect(chat.locator('#settingsPanel')).toBeHidden();
@@ -146,6 +154,7 @@ test('opens embedded settings when the host suppresses the referrer', async () =
   await expect(chat.locator('#settingsPanel')).toBeVisible();
   await page.locator('.ai-settings-btn').click();
   await expect(chat.locator('#settingsPanel')).toBeHidden();
+  expect(await windowElement.boundingBox()).toEqual(originalBounds);
   await page.close();
 });
 

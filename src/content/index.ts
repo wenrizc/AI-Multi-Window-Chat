@@ -12,7 +12,6 @@ class AIMultiWindow {
   private static readonly DEFAULT_WINDOW_HEIGHT = 620;
   private static readonly MIN_WINDOW_WIDTH = 350;
   private static readonly MIN_WINDOW_HEIGHT = 400;
-  private static readonly SETTINGS_PANEL_WINDOW_WIDTH = 390;
   private static readonly WINDOW_Z_INDEX_BASE = 2147483000;
   private static readonly SNAP_THRESHOLD = 28;
   private windows = new Map<string, {
@@ -411,7 +410,7 @@ class AIMultiWindow {
 
   private bindControls(wrapper: HTMLElement, windowId: string, cleanup: () => void) {
     wrapper.querySelector('.ai-settings-btn')?.addEventListener('click', () => {
-      this.ensureSettingsPanelSpace(wrapper);
+      wrapper.classList.remove('minimized');
       const iframe = wrapper.querySelector('iframe') as HTMLIFrameElement | null;
       iframe?.contentWindow?.postMessage(
         { type: 'TOGGLE_SETTINGS_PANEL' },
@@ -583,22 +582,6 @@ class AIMultiWindow {
         ${accentPath}
       </svg>
     `;
-  }
-
-  private ensureSettingsPanelSpace(wrapper: HTMLElement) {
-    if (wrapper.classList.contains('minimized')) {
-      wrapper.classList.remove('minimized');
-    }
-
-    const viewportWidth = Math.max(0, window.innerWidth - 20);
-    const targetWidth = Math.min(AIMultiWindow.SETTINGS_PANEL_WINDOW_WIDTH, viewportWidth || AIMultiWindow.SETTINGS_PANEL_WINDOW_WIDTH);
-    const currentWidth = wrapper.offsetWidth || parseFloat(wrapper.style.width) || AIMultiWindow.DEFAULT_WINDOW_WIDTH;
-
-    if (currentWidth < targetWidth) {
-      wrapper.style.width = `${targetWidth}px`;
-    }
-
-    this.clampWindowToViewport(wrapper);
   }
 
   private clamp(value: number, min: number, max: number): number {
