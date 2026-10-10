@@ -144,6 +144,7 @@ class ChatWindowApp {
   private composerStatusTimer: number | null = null;
   private composerStatusKey: string | null = null;
   private copyButtonTimers = new WeakMap<HTMLButtonElement, number>();
+  private composerDraftSaveTimer: number | null = null;
 
   /** Throttled streaming render state. */
   private renderTimer: number | null = null;
@@ -182,7 +183,9 @@ class ChatWindowApp {
     attachmentBtn: document.getElementById('attachmentBtn') as HTMLButtonElement,
     attachmentTray: document.getElementById('attachmentTray') as HTMLElement,
     settingsPanel: document.getElementById('settingsPanel') as HTMLElement,
-    settingsCloseBtn: document.getElementById('settingsCloseBtn') as HTMLButtonElement
+    settingsCloseBtn: document.getElementById('settingsCloseBtn') as HTMLButtonElement,
+    sessionContext: document.getElementById('sessionContext') as HTMLElement,
+    jumpToLatest: document.getElementById('jumpToLatest') as HTMLButtonElement
   };
 
   constructor() {
@@ -333,6 +336,9 @@ class ChatWindowApp {
     if (payload.initialMessage) {
       this.elements.messageInput.value = payload.initialMessage;
       this.adjustTextareaHeight();
+      this.persistComposerDraft();
+    } else {
+      void this.restoreComposerDraft();
     }
 
     this.renderSelectors();
@@ -362,15 +368,22 @@ class ChatWindowApp {
     this.elements.messagesContainer.addEventListener('scroll', () => {
       const el = this.elements.messagesContainer;
       this.userPinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_PIN_THRESHOLD_PX;
+      this.elements.jumpToLatest.hidden = this.userPinnedToBottom;
+    });
+    this.elements.jumpToLatest.addEventListener('click', () => {
+      this.userPinnedToBottom = true;
+      this.scrollToBottom();
+      this.elements.jumpToLatest.hidden = true;
     });
     this.elements.messageInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         void this.sendMessage().catch((error) => this.reportAsyncFailure(error));
       }
     });
     this.elements.messageInput.addEventListener('input', () => {
       this.adjustTextareaHeight();
+      this.scheduleComposerDraftSave();
       if (!this.isLoading) {
         this.clearComposerStatus();
       }
@@ -379,17 +392,20 @@ class ChatWindowApp {
       this.profileId = this.elements.profileSelect.value || null;
       this.clearComposerStatus();
       this.syncStreamingControl();
+      this.renderSessionContext();
     });
     this.elements.promptSelect.addEventListener('change', () => {
       this.promptId = this.elements.promptSelect.value || null;
       if (!this.promptId || this.prompts.some((prompt) => prompt.id === this.promptId)) {
         this.clearComposerStatus();
       }
+      this.renderSessionContext();
     });
     this.elements.searchToggle.addEventListener('change', () => {
       if (!this.elements.searchToggle.checked || this.featureSettings?.search.tavilyApiKey.trim()) {
         this.clearComposerStatus();
       }
+      this.renderSessionContext();
     });
     this.elements.streamingToggle.addEventListener('change', () => {
       const model = this.getCurrentModel();
@@ -473,10 +489,10 @@ class ChatWindowApp {
   }
 
   private createReasoningBlock(summary: string): HTMLElement {
-    const reasoning = document.createElement('div');
+    const reasoning = document.createElement('details');
     reasoning.className = 'message-reasoning';
     reasoning.innerHTML = `
-      <div class="message-reasoning-title">${escapeHtml(t('chat__reasoningSummary'))}</div>
+      <summary class="message-reasoning-title">${escapeHtml(t('chat__reasoningSummary'))}<span aria-hidden="true">⌄</span></summary>
       <div class="message-reasoning-body">${escapeHtml(summary).replace(/\n/g, '<br>')}</div>
     `;
     return reasoning;
@@ -539,6 +555,45 @@ class ChatWindowApp {
       window.requestAnimationFrame(() => {
         this.elements.profileSelect.focus({ preventScroll: true });
       });
+    } else {
+      window.requestAnimationFrame(() => {
+        this.elements.messageInput.focus({ preventScroll: true });
+      });
+    }
+  }
+
+  private getComposerDraftKey() {
+    return `ui_chat_draft_${this.chatId}`;
+  }
+
+  private scheduleComposerDraftSave() {
+    if (this.composerDraftSaveTimer !== null) {
+      window.clearTimeout(this.composerDraftSaveTimer);
+    }
+    this.composerDraftSaveTimer = window.setTimeout(() => {
+      this.composerDraftSaveTimer = null;
+      this.persistComposerDraft();
+    }, 180);
+  }
+
+  private persistComposerDraft() {
+    const value = this.elements.messageInput.value;
+    const operation = value
+      ? chrome.storage.local.set({ [this.getComposerDraftKey()]: value })
+      : chrome.storage.local.remove(this.getComposerDraftKey());
+    void operation.catch(() => undefined);
+  }
+
+  private async restoreComposerDraft() {
+    try {
+      const result = await chrome.storage.local.get(this.getComposerDraftKey());
+      const value = result[this.getComposerDraftKey()];
+      if (typeof value === 'string' && value && !this.elements.messageInput.value) {
+        this.elements.messageInput.value = value;
+        this.adjustTextareaHeight();
+      }
+    } catch {
+      // Draft persistence is best effort and should never block chat startup.
     }
   }
 
@@ -631,6 +686,19 @@ class ChatWindowApp {
       this.elements.promptSelect.value = this.promptId;
     }
     this.syncStreamingControl();
+    this.renderSessionContext();
+  }
+
+  private renderSessionContext() {
+    const model = this.getCurrentModel();
+    const provider = this.providers.find((item) => item.id === this.profileId);
+    const prompt = this.prompts.find((item) => item.id === this.promptId);
+    const chips = [provider?.name || t('chat__noProvider'), model?.displayName || model?.modelId]
+      .filter(Boolean)
+      .map((value) => `<span class="context-chip">${escapeHtml(String(value))}</span>`);
+    if (prompt) chips.push(`<span class="context-chip">${escapeHtml(prompt.name)}</span>`);
+    if (this.elements.searchToggle.checked) chips.push(`<span class="context-chip">${escapeHtml(t('chat__searchToggle'))}</span>`);
+    this.elements.sessionContext.innerHTML = chips.join('');
   }
 
   private getCurrentModel() {
@@ -705,6 +773,19 @@ class ChatWindowApp {
 
     const content = document.createElement('div');
     content.className = 'message-content';
+    if (message.role === 'user' && message.attachments?.length) {
+      const gallery = document.createElement('div');
+      gallery.className = 'message-attachments';
+      for (const attachment of message.attachments) {
+        const image = document.createElement('img');
+        image.className = 'message-attachment-image';
+        image.src = attachment.dataUrl;
+        image.alt = attachment.name;
+        image.loading = 'lazy';
+        gallery.appendChild(image);
+      }
+      wrapper.appendChild(gallery);
+    }
     const rendered = message.role === 'assistant' ? await renderMarkdown(message.content) : escapeHtml(message.content).replace(/\n/g, '<br>');
     content.innerHTML = rendered;
     wrapper.appendChild(content);
@@ -806,12 +887,14 @@ class ChatWindowApp {
   private async appendUserMessage(
     content: string,
     parentId: string | null,
-    mode: ChatMode = this.currentMode
+    mode: ChatMode = this.currentMode,
+    attachments: ChatAttachment[] = []
   ): Promise<PersistedMessage> {
     const message: PersistedMessage = {
       id: uid('msg'),
       role: 'user',
       content,
+      attachments: attachments.map((attachment) => ({ ...attachment })),
       parentId,
       reasoningSummary: null,
       toolCalls: [],
@@ -838,10 +921,10 @@ class ChatWindowApp {
         <span class="message-avatar">🤖</span>
         <span class="message-role">${escapeHtml(t('chat__roleAI'))}</span>
       </div>
-      <div class="message-reasoning">
-        <div class="message-reasoning-title">${escapeHtml(t('chat__reasoningSummary'))}</div>
+      <details class="message-reasoning">
+        <summary class="message-reasoning-title">${escapeHtml(t('chat__reasoningSummary'))}<span aria-hidden="true">⌄</span></summary>
         <div class="message-reasoning-body"></div>
-      </div>
+      </details>
       <details class="message-tools" hidden>
         <summary class="message-tools-summary">
           <span class="message-tools-title"></span>
@@ -936,9 +1019,10 @@ class ChatWindowApp {
         }
       })].filter(Boolean).join('\n').trim();
       const parentId = this.activeLeafId;
-      const userMessage = await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'), parentId, mode);
-      this.elements.messageInput.value = '';
       const requestAttachments = this.attachments.filter((a) => a.status === 'ready' && a.mimeType.startsWith('image/'));
+      const userMessage = await this.appendUserMessage(effectiveContent || t('chat__attachmentOnly'), parentId, mode, requestAttachments);
+      this.elements.messageInput.value = '';
+      this.persistComposerDraft();
       this.attachments = [];
       this.renderAttachments();
       this.adjustTextareaHeight();
@@ -1017,7 +1101,21 @@ class ChatWindowApp {
       mode: params.mode,
       messages: [
         ...(params.prompt?.content ? [{ role: 'system' as const, content: params.prompt.content }] : []),
-        ...path.map((message) => ({ role: message.role, content: message.content }))
+        ...path.map((message): ChatRequest['messages'][number] => ({
+          role: message.role,
+          content: message.role === 'user' && message.attachments?.length
+            ? [
+              { type: 'text', text: message.content },
+              ...message.attachments.map((attachment) => ({
+                type: 'image_url' as const,
+                image_url: { url: attachment.dataUrl }
+              }))
+            ]
+            : message.content,
+          ...(message.role === 'assistant' && message.reasoningSummary
+            ? { reasoningContent: message.reasoningSummary }
+            : {})
+        }))
       ],
       generationParams: params.provider.defaultGenerationParams,
       streamingEnabled: this.streamingEnabled,
@@ -1216,7 +1314,8 @@ class ChatWindowApp {
 
       const parentId = target.parentId ?? null;
       this.currentMode = target.mode;
-      const userMessage = await this.appendUserMessage(newContent, parentId, target.mode);
+      const attachments = target.attachments ?? [];
+      const userMessage = await this.appendUserMessage(newContent, parentId, target.mode, attachments);
       await this.renderHistory();
 
       this.postChatRequest({
@@ -1229,7 +1328,7 @@ class ChatWindowApp {
         parentMessageId: parentId,
         appendUserMessage: true,
         purpose: 'edit',
-        attachments: []
+        attachments
       });
     } finally {
       this.requestPreparationInFlight = false;
@@ -1380,7 +1479,7 @@ class ChatWindowApp {
             event.toolCalls,
             true
           );
-          this.scrollToBottom();
+          if (this.userPinnedToBottom) this.scrollToBottom();
         }
         break;
       case 'sourceUpdate':
@@ -1439,6 +1538,7 @@ class ChatWindowApp {
     sources: PersistedMessage['sources'];
     searchMeta: PersistedMessage['searchMeta'];
   }) {
+    const shouldFollow = this.userPinnedToBottom;
     this.cancelScheduledRender();
     this.renderSealed = true;
 
@@ -1467,8 +1567,8 @@ class ChatWindowApp {
 
     this.resetLoadingState();
     await this.renderHistory();
-    this.userPinnedToBottom = true;
-    this.scrollToBottom();
+    this.userPinnedToBottom = shouldFollow;
+    if (shouldFollow) this.scrollToBottom();
   }
 
   private resetLoadingState() {
@@ -1774,6 +1874,7 @@ class ChatWindowApp {
 
   private scrollToBottom() {
     this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+    this.elements.jumpToLatest.hidden = true;
   }
 }
 

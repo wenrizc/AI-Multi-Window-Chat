@@ -71,6 +71,24 @@ beforeEach(() => {
 });
 
 describe('popup providers', () => {
+  it('retains an invalid custom-header draft while switching providers', async () => {
+    await bootPopup({
+      providers: [createProvider({ id: 'p1', name: 'Alpha' }), createProvider({ id: 'p2', name: 'Beta' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: 'p1' }
+    });
+    const nameInput = document.querySelector<HTMLInputElement>('#headerRows .header-name');
+    const valueInput = document.querySelector<HTMLInputElement>('#headerRows .header-value');
+    expect(nameInput).toBeTruthy();
+    expect(valueInput).toBeTruthy();
+    setValue(nameInput as HTMLInputElement, 'invalid header');
+    setValue(valueInput as HTMLInputElement, 'draft-value');
+
+    await userEvent.click(document.querySelector('#profileList [data-id="p2"]') as HTMLElement);
+    await userEvent.click(document.querySelector('#profileList [data-id="p1"]') as HTMLElement);
+    expect(document.querySelector<HTMLInputElement>('#headerRows .header-name')?.value).toBe('invalid header');
+    expect(document.querySelector<HTMLInputElement>('#headerRows .header-value')?.value).toBe('draft-value');
+  });
+
   it('saves custom thinking levels independently for each model and allows removal', async () => {
     await bootPopup({
       providers: [createProvider({ id: 'p1', name: 'Alpha' }), createProvider({ id: 'p2', name: 'Beta' })],
@@ -187,6 +205,25 @@ describe('popup onboarding', () => {
 });
 
 describe('popup connection testing', () => {
+  it('tests the current provider draft without applying it', async () => {
+    await bootPopup({
+      providers: [createProvider({ id: 'p1', name: 'Alpha', baseUrl: 'https://saved.test/v1' })],
+      featureSettings: { ...createRootStore().featureSettings, defaultProviderId: 'p1' }
+    });
+    await waitFor(() => document.querySelectorAll('#profileList .profile-item').length === 1);
+
+    let testedUrl = '';
+    state.setRuntimeMessageHandler((message) => {
+      const provider = (message as { provider: { baseUrl: string } }).provider;
+      testedUrl = provider.baseUrl;
+      return { success: true };
+    });
+    setValue(el<HTMLInputElement>('apiUrl'), 'https://draft.test/v1');
+    await userEvent.click(el<HTMLButtonElement>('testBtn'));
+    await waitFor(() => testedUrl === 'https://draft.test/v1');
+    expect(storedStore().providers[0].baseUrl).toBe('https://saved.test/v1');
+  });
+
   it('shows a success status when the provider test succeeds', async () => {
     await bootPopup({
       providers: [createProvider({ id: 'p1', name: 'Alpha' })],

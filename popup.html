@@ -27,6 +27,24 @@
       --panel-list-height: 360px;
     }
 
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --surface-page: #111827;
+        --surface-panel: rgba(31, 41, 55, 0.94);
+        --surface-card: #1f2937;
+        --surface-muted: #273449;
+        --border: #475569;
+        --border-strong: #64748b;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --accent-soft: #1e3a8a;
+      }
+      input, textarea, select, .profile-details, .profile-item.active, .btn-secondary { color: var(--text); background: var(--surface-card); }
+      .header, .tabs, .tab-content { background: var(--surface-panel); }
+      .status.draft { background: #422006; color: #fde68a; border-color: #92400e; }
+    }
+
     html,
     body {
       height: auto;
@@ -47,6 +65,43 @@
       flex-direction: column;
       padding: 10px;
       gap: 10px;
+    }
+
+    body.settings-page {
+      width: 100%;
+      min-width: 0;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px clamp(20px, 4vw, 56px) 32px;
+      gap: 16px;
+    }
+
+    body.settings-page .header {
+      min-height: 72px;
+      padding: 0 24px;
+    }
+
+    body.settings-page .tab-content {
+      min-height: calc(100vh - 180px);
+    }
+
+    body.settings-page .profile-details {
+      min-height: 0;
+    }
+
+    body.settings-page .profile-details .action-row {
+      margin-top: 18px;
+      padding-top: 14px;
+    }
+
+    body.settings-page .status {
+      position: sticky;
+      top: 8px;
+      z-index: 5;
+    }
+
+    body.settings-page .quick-settings-link {
+      display: none;
     }
 
     .header {
@@ -153,6 +208,24 @@
       padding: 7px 10px;
       font-size: 12px;
       line-height: 1.2;
+    }
+
+    .quick-settings-link {
+      margin-left: auto;
+    }
+
+    @media (max-width: 700px) {
+      body:not(.settings-page) .advanced-field { display: none; }
+      body:not(.settings-page) .quick-settings-link { display: inline-flex; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
     }
 
     .config-grid {
@@ -490,6 +563,13 @@
       background: #fef2f2;
       color: #dc2626;
       border: 1px solid #fad2cf;
+    }
+
+    .status.draft {
+      display: block;
+      background: #fffbeb;
+      color: #92400e;
+      border: 1px solid #fde68a;
     }
 
     .onboarding-hero {
@@ -1031,6 +1111,32 @@
         margin-left: 0;
       }
     }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+      }
+
+      .config-toolbar-right,
+      .profile-list,
+      .prompt-list,
+      .history-item,
+      .toggle-card {
+        background: var(--surface-muted);
+      }
+
+      .status.success {
+        background: #052e16;
+        color: #86efac;
+        border-color: #166534;
+      }
+
+      .status.error {
+        background: #450a0a;
+        color: #fca5a5;
+        border-color: #991b1b;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1038,25 +1144,26 @@
     <h1 data-i18n="popup__title">AI Assistant</h1>
   </div>
 
-  <div class="tabs">
-    <button class="tab active" data-tab="config" data-i18n="popup__tabLLM">LLM</button>
-    <button class="tab" data-tab="search" data-i18n="popup__tabSearch">Search</button>
-    <button class="tab" data-tab="prompts" data-i18n="popup__tabPrompts">Prompts</button>
-    <button class="tab" data-tab="history" data-i18n="popup__tabHistory">History</button>
+  <div class="tabs" role="tablist">
+    <button id="configTabButton" class="tab active" data-tab="config" role="tab" aria-controls="configTab" aria-selected="true" data-i18n="popup__tabLLM">LLM</button>
+    <button id="searchTabButton" class="tab" data-tab="search" role="tab" aria-controls="searchTab" aria-selected="false" tabindex="-1" data-i18n="popup__tabSearch">Search</button>
+    <button id="promptsTabButton" class="tab" data-tab="prompts" role="tab" aria-controls="promptsTab" aria-selected="false" tabindex="-1" data-i18n="popup__tabPrompts">Prompts</button>
+    <button id="historyTabButton" class="tab" data-tab="history" role="tab" aria-controls="historyTab" aria-selected="false" tabindex="-1" data-i18n="popup__tabHistory">History</button>
   </div>
 
-  <div class="tab-content active" id="configTab">
+  <div class="tab-content active" id="configTab" role="tabpanel" aria-labelledby="configTabButton">
     <div class="config-toolbar">
       <button id="addProfileBtn" class="btn btn-primary btn-small" data-i18n="popup__btnAddProfile">New</button>
       <button id="exportProfilesBtn" class="btn btn-secondary btn-small" data-i18n="config__btnExport">Export</button>
       <button id="importProfilesBtn" class="btn btn-secondary btn-small" data-i18n="config__btnImport">Import</button>
+      <button id="openSettingsBtn" class="btn btn-secondary btn-small quick-settings-link" data-i18n="popup__btnOpenSettings">完整设置</button>
       <div class="config-toolbar-right">
         <label for="activeProfileSelect" data-i18n="popup__labelActiveProfile">Default</label>
         <select id="activeProfileSelect"></select>
       </div>
     </div>
 
-    <div id="status" class="status"></div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
 
     <div class="config-grid">
       <div class="profile-list" id="profileList"></div>
@@ -1091,7 +1198,7 @@
             </div>
           </div>
 
-          <div class="input-group">
+          <div class="input-group advanced-field">
             <label for="authModeSelect" data-i18n="popup__labelAuthMode">Auth Mode</label>
             <select id="authModeSelect">
               <option value="bearer" data-i18n="popup__authModeBearer">Bearer (API Key)</option>
@@ -1100,13 +1207,13 @@
             </select>
           </div>
 
-          <div class="input-group field-span-2">
+          <div class="input-group field-span-2 advanced-field">
             <label data-i18n="popup__labelCustomHeaders">Custom Headers</label>
             <div id="headerRows" class="header-rows"></div>
             <button id="addHeaderBtn" type="button" class="btn btn-secondary btn-small" data-i18n="popup__btnAddHeader">Add Header</button>
           </div>
 
-          <div class="input-group">
+          <div class="input-group advanced-field">
             <div class="label-with-help">
               <label for="transportSelect" data-i18n="popup__labelTransport">Transport</label>
               <span class="transport-help field-help" tabindex="0" data-i18n-aria-label="popup__transportHelpAriaLabel" aria-label="Transport help">?
@@ -1122,7 +1229,7 @@
             </select>
           </div>
 
-          <div class="input-group">
+          <div class="input-group advanced-field">
             <div class="label-with-help">
               <label for="reasoningFormatSelect" data-i18n="popup__labelReasoningFormat">Reasoning Format</label>
               <span class="reasoning-help field-help" tabindex="0" data-i18n-aria-label="popup__reasoningFormatHelpAriaLabel" aria-label="Reasoning format help">?
@@ -1140,20 +1247,20 @@
             </select>
           </div>
 
-          <div class="input-group">
+          <div class="input-group advanced-field">
             <label for="customEffortsInput" data-i18n="chat__customEfforts">Custom thinking levels</label>
             <textarea id="customEffortsInput" rows="2" aria-describedby="customEffortsHelp" placeholder="minimal, xhigh, ultra"></textarea>
             <div id="customEffortsHelp" class="custom-efforts-help" data-i18n="chat__customEffortsHelp">Applies only to this model. Separate levels with commas or new lines, then save the model configuration. Leave empty to remove custom levels.</div>
           </div>
 
-          <div class="input-group checkbox-group toggle-card">
+          <div class="input-group checkbox-group toggle-card advanced-field">
             <label for="supportsStreamingCheckbox">
               <input type="checkbox" id="supportsStreamingCheckbox" />
               <span data-i18n="popup__supportsStreaming">Enable Streaming</span>
             </label>
           </div>
 
-          <div class="input-group">
+          <div class="input-group advanced-field">
             <label for="temperatureInput" data-i18n="popup__labelDefaultTemperature">Default Temperature</label>
             <input type="text" id="temperatureInput" />
           </div>
@@ -1170,7 +1277,7 @@
     </div>
   </div>
 
-  <div class="tab-content" id="searchTab">
+  <div class="tab-content" id="searchTab" role="tabpanel" aria-labelledby="searchTabButton" hidden>
     <div id="searchStatus" class="status"></div>
     <div class="search-grid">
       <div class="input-group search-span-2">
@@ -1210,7 +1317,7 @@
     </div>
   </div>
 
-  <div class="tab-content" id="promptsTab">
+  <div class="tab-content" id="promptsTab" role="tabpanel" aria-labelledby="promptsTabButton" hidden>
     <div class="config-toolbar">
       <button id="addPromptBtn" class="btn btn-primary btn-small" data-i18n="prompt__btnAdd">New</button>
       <button id="exportPromptsBtn" class="btn btn-secondary btn-small" data-i18n="config__btnExport">Export</button>
@@ -1246,7 +1353,7 @@
     </div>
   </div>
 
-  <div class="tab-content" id="historyTab">
+  <div class="tab-content" id="historyTab" role="tabpanel" aria-labelledby="historyTabButton" hidden>
     <div id="historyStatus" class="status"></div>
 
     <div class="history-toolbar">

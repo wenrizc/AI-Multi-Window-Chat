@@ -65,6 +65,27 @@ function emit(event: StreamEvent): void {
 }
 
 describe('chat window streaming', () => {
+  it('keeps IME confirmation in the composer and persists the draft until send', async () => {
+    await bootChat({
+      providers: [createProvider({ id: 'p1' })],
+      featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' }
+    });
+    window.postMessage({ type: 'INIT_CHAT', chatId: 'draft-chat', initialMessage: 'seed' }, window.location.origin);
+    await waitFor(() => el<HTMLTextAreaElement>('messageInput').value === 'seed');
+
+    const input = el<HTMLTextAreaElement>('messageInput');
+    setValue(input, '你好');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }));
+    expect(lastStartChat()).toBeNull();
+    expect(input.value).toBe('你好');
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+    expect(await chrome.storage.local.get('ui_chat_draft_draft-chat')).toEqual({ 'ui_chat_draft_draft-chat': '你好' });
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => lastStartChat()?.userMessage === '你好');
+    await waitFor(() => !('ui_chat_draft_draft-chat' in state.storage));
+  });
+
   it('sends a request over the port and renders a streamed reply', async () => {
     const port = await bootChat(
       {
@@ -401,6 +422,59 @@ describe('chat window failure handling', () => {
 });
 
 describe('chat window history init', () => {
+  const image = { id: 'image-1', name: 'photo.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', status: 'ready' as const };
+
+  it('renders a newly attached image and includes it in the outbound history', async () => {
+    await bootChat({ providers: [createProvider({ id: 'p1' })], featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' } });
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([Uint8Array.from(atob(image.dataUrl.split(',')[1]), char => char.charCodeAt(0))], image.name, { type: image.mimeType }));
+    const input = el<HTMLInputElement>('attachmentInput');
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await waitFor(() => document.querySelector('.attachment-chip.ready'));
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'describe');
+    el<HTMLButtonElement>('sendBtn').click();
+    const payload = await waitFor(() => lastStartChat());
+    expect(payload.attachments).toHaveLength(1);
+    expect(payload.messages[payload.messages.length - 1]?.content).toEqual([
+      { type: 'text', text: 'describe' }, { type: 'image_url', image_url: { url: image.dataUrl } }
+    ]);
+    const preview = document.querySelector<HTMLImageElement>('.message-user .message-attachment-image');
+    expect(preview?.src).toBe(image.dataUrl);
+    expect(preview?.alt).toBe(image.name);
+  });
+
+  it.each(['continue', 'edit', 'regenerate'] as const)('restores images and retains them when performing %s', async (action) => {
+    await bootChat({ providers: [createProvider({ id: 'p1' })], featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1' } });
+    window.postMessage({
+      type: 'INIT_CHAT', chatId: 'image-history', activeLeafId: 'a1', historyMessages: [
+        createPersistedMessage({ id: 'u1', role: 'user', content: 'describe', parentId: null, attachments: [image] }),
+        createPersistedMessage({ id: 'a1', content: 'a photo', parentId: 'u1', reasoningSummary: 'thinking' })
+      ]
+    }, window.location.origin);
+    await waitFor(() => document.querySelectorAll('.message').length === 2);
+    expect(document.querySelector<HTMLImageElement>('.message-attachment-image')?.src).toBe(image.dataUrl);
+    if (action === 'continue') {
+      setValue(el<HTMLTextAreaElement>('messageInput'), 'more');
+      el<HTMLButtonElement>('sendBtn').click();
+    } else if (action === 'edit') {
+      document.querySelector<HTMLButtonElement>('.message-action-edit')?.click();
+      const editor = await waitFor(() => document.querySelector<HTMLTextAreaElement>('.message-edit-input'));
+      editor.value = 'describe again';
+      document.querySelector<HTMLButtonElement>('.message-edit-save')?.click();
+    } else {
+      document.querySelector<HTMLButtonElement>('.message-action-regenerate')?.click();
+    }
+    const payload = await waitFor(() => lastStartChat());
+    expect(payload.messages[0].content).toEqual([
+      { type: 'text', text: action === 'edit' ? 'describe again' : 'describe' },
+      { type: 'image_url', image_url: { url: image.dataUrl } }
+    ]);
+    if (action === 'continue') expect(payload.messages[1].reasoningContent).toBe('thinking');
+    if (action === 'edit') expect(payload.attachments).toEqual([image]);
+    expect(document.querySelector<HTMLImageElement>('.message-attachment-image')?.src).toBe(image.dataUrl);
+  });
+
   it('renders history and pre-fills the composer from INIT_CHAT', async () => {
     await bootChat(
       {

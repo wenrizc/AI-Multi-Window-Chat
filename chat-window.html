@@ -9,6 +9,7 @@
 </head>
 <body>
   <div class="chat-container">
+    <div class="chat-session-context" id="sessionContext" aria-live="polite"></div>
     <div class="messages-container" id="messagesContainer">
       <div class="welcome-message">
         <div class="welcome-icon">💬</div>
@@ -16,6 +17,7 @@
         <div class="welcome-hint" data-i18n="chat__welcomeHint">Enter a question to start chatting with AI</div>
       </div>
     </div>
+    <button id="jumpToLatest" class="jump-to-latest" type="button" hidden data-i18n="chat__jumpToLatest">回到最新</button>
 
     <div class="chat-settings-panel chat-settings-popover" id="settingsPanel" role="dialog" aria-modal="false" aria-labelledby="settingsPanelTitle" hidden>
       <div class="chat-settings-header">
@@ -77,7 +79,7 @@
           <span id="composerStatusText" class="composer-status-text"></span>
           <button id="composerRetryBtn" class="composer-status-retry" type="button" data-i18n="chat__btnRetry" hidden>Retry</button>
         </div>
-        <textarea id="messageInput" rows="1" data-i18n-placeholder="chat__inputPlaceholder" placeholder="Ask anything"></textarea>
+        <textarea id="messageInput" rows="1" data-i18n-placeholder="chat__inputPlaceholder" data-i18n-aria-label="chat__inputAriaLabel" placeholder="Ask anything" aria-label="Message"></textarea>
       </div>
       <input id="attachmentInput" type="file" accept="image/*,.txt,.md" multiple hidden>
       <button id="attachmentBtn" class="attachment-btn" type="button" data-i18n-title="chat__btnAttach" data-i18n-aria-label="chat__btnAttach" title="Attach files" aria-label="Attach files">

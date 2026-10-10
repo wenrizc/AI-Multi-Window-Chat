@@ -270,6 +270,13 @@ class AIMultiWindow {
       event.stopPropagation();
       this.beginTitleEdit(windowId);
     });
+    entry.titleDisplay.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        this.beginTitleEdit(windowId);
+      }
+    });
     entry.titleInput.addEventListener('click', (event) => {
       event.stopPropagation();
     });
@@ -308,7 +315,7 @@ class AIMultiWindow {
     wrapper.innerHTML = `
       <div class="ai-window-header">
         <div class="ai-window-title">
-          <span class="ai-window-number">${escapeHtml(title)}</span>
+          <span class="ai-window-number" tabindex="0" role="button" aria-label="${escapeHtmlAttr(t('content__renameChat'))}" title="${escapeHtmlAttr(t('content__renameChat'))}">${escapeHtml(title)}</span>
           <input class="ai-title-input" type="text" value="${escapeHtmlAttr(title)}" hidden>
         </div>
         <div class="ai-window-controls">

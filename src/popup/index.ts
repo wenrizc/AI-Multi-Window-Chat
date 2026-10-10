@@ -39,6 +39,24 @@ type ProviderImportPayload = {
   featureSettings?: Partial<FeatureSettings> | null;
 };
 
+type ProviderDraft = {
+  profileName: string;
+  apiUrl: string;
+  apiKey: string;
+  modelName: string;
+  authMode: string;
+  headers: Array<{ name: string; value: string }>;
+  transport: string;
+  reasoningFormat: string;
+  customEfforts: string;
+  supportsStreaming: boolean;
+  temperature: string;
+  updatedAt: string;
+};
+
+const PROVIDER_DRAFTS_KEY = 'ui_provider_drafts_v1';
+const PROMPT_DRAFTS_KEY = 'ui_prompt_drafts_v1';
+
 const ONBOARDING_PRESETS: Record<OnboardingPresetId, {
   name: string;
   baseUrl: string;
@@ -83,6 +101,7 @@ const elements = {
   exportProfilesBtn: document.getElementById('exportProfilesBtn') as HTMLButtonElement,
   importProfilesBtn: document.getElementById('importProfilesBtn') as HTMLButtonElement,
   importProfilesInput: document.getElementById('importProfilesInput') as HTMLInputElement,
+  openSettingsBtn: document.getElementById('openSettingsBtn') as HTMLButtonElement,
   saveBtn: document.getElementById('saveBtn') as HTMLButtonElement,
   deleteBtn: document.getElementById('deleteBtn') as HTMLButtonElement,
   setActiveBtn: document.getElementById('setActiveBtn') as HTMLButtonElement,
@@ -146,8 +165,16 @@ class PopupApp {
   private onboardingPresetId: OnboardingPresetId = 'openai';
   private historySearchTerm = '';
   private confirmActionInFlight = false;
+  private providerDrafts: Record<string, ProviderDraft> = {};
+  private promptDrafts: Record<string, { name: string; content: string; updatedAt: string }> = {};
+  private draftSaveTimer: number | null = null;
+  private testingProvider = false;
+  private statusTimers = new WeakMap<HTMLElement, number>();
 
   async init() {
+    if (window.innerWidth > 700) {
+      document.body.classList.add('settings-page');
+    }
     document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
     if (typeof updatePageTranslations === 'function') {
       updatePageTranslations();
@@ -157,6 +184,7 @@ class PopupApp {
 
     this.bindEvents();
     this.store = await getStore();
+    await this.loadProviderDrafts();
     this.enforceFixedDefaults();
     this.selectedProviderId = this.store.featureSettings.defaultProviderId ?? this.store.providers[0]?.id ?? null;
     this.selectedPromptId = this.store.featureSettings.defaultPromptId ?? this.store.prompts[0]?.id ?? null;
@@ -165,9 +193,34 @@ class PopupApp {
     this.maybeShowOnboarding();
   }
 
+  private async loadProviderDrafts() {
+    const result = await chrome.storage.local.get([PROVIDER_DRAFTS_KEY, PROMPT_DRAFTS_KEY]);
+    const drafts = result[PROVIDER_DRAFTS_KEY];
+    if (drafts && typeof drafts === 'object') {
+      this.providerDrafts = drafts as Record<string, ProviderDraft>;
+    }
+    const promptDrafts = result[PROMPT_DRAFTS_KEY];
+    if (promptDrafts && typeof promptDrafts === 'object') {
+      this.promptDrafts = promptDrafts as Record<string, { name: string; content: string; updatedAt: string }>;
+    }
+  }
+
   private bindEvents() {
     elements.tabs.forEach((tab) => {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab as TabName));
+      tab.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const currentIndex = elements.tabs.indexOf(tab);
+        const nextIndex = event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? elements.tabs.length - 1
+            : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + elements.tabs.length) % elements.tabs.length;
+        const next = elements.tabs[nextIndex];
+        this.switchTab(next.dataset.tab as TabName);
+        next.focus();
+      });
     });
     elements.addProfileBtn.addEventListener('click', () => {
       void this.createProvider().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
@@ -185,6 +238,11 @@ class PopupApp {
       this.openModal(elements.exportModal);
     });
     elements.importProfilesBtn.addEventListener('click', () => elements.importProfilesInput.click());
+    elements.openSettingsBtn.addEventListener('click', () => {
+      if (chrome.runtime.openOptionsPage) {
+        void chrome.runtime.openOptionsPage();
+      }
+    });
     elements.importProfilesInput.addEventListener('change', () => {
       void this.importProviders().catch((error) => this.showStatus(elements.status, getErrorText(error), 'error'));
     });
@@ -204,6 +262,17 @@ class PopupApp {
       this.renderProviders();
       this.fillProviderForm();
     });
+
+    const draftFields = [
+      elements.profileName, elements.apiUrl, elements.apiKey, elements.modelName,
+      elements.authModeSelect, elements.transportSelect, elements.reasoningFormatSelect,
+      elements.customEffortsInput, elements.supportsStreamingCheckbox, elements.temperatureInput
+    ];
+    draftFields.forEach((field) => {
+      field.addEventListener('input', () => this.scheduleProviderDraftSave());
+      field.addEventListener('change', () => this.scheduleProviderDraftSave());
+    });
+    elements.headerRows.addEventListener('input', () => this.scheduleProviderDraftSave());
 
     elements.toggleApiKeyBtn.addEventListener('click', () => {
       this.apiKeyVisible = !this.apiKeyVisible;
@@ -228,6 +297,7 @@ class PopupApp {
         if (elements.headerRows.children.length === 0) {
           this.appendHeaderRow('', '');
         }
+        this.scheduleProviderDraftSave();
         return;
       }
       if (button.dataset.headerAction === 'toggle') {
@@ -276,6 +346,9 @@ class PopupApp {
       this.selectedPromptId = target.dataset.id || null;
       this.renderPrompts();
       this.fillPromptForm();
+    });
+    [elements.promptName, elements.promptContent].forEach((field) => {
+      field.addEventListener('input', () => this.schedulePromptDraftSave());
     });
 
     elements.exportAllBtn.addEventListener('click', () => {
@@ -447,8 +520,17 @@ class PopupApp {
   }
 
   private switchTab(name: TabName) {
-    elements.tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
-    elements.tabContents.forEach((content) => content.classList.toggle('active', content.id === `${name}Tab`));
+    elements.tabs.forEach((tab) => {
+      const active = tab.dataset.tab === name;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+    elements.tabContents.forEach((content) => {
+      const active = content.id === `${name}Tab`;
+      content.classList.toggle('active', active);
+      content.hidden = !active;
+    });
   }
 
   private async persist(): Promise<boolean> {
@@ -547,17 +629,60 @@ class PopupApp {
       return;
     }
     const model = provider.modelCatalog?.[0];
-    elements.profileName.value = provider.name;
-    elements.apiUrl.value = provider.baseUrl;
-    elements.apiKey.value = provider.apiKey;
-    elements.modelName.value = model?.modelId ?? provider.defaultModel;
-    elements.authModeSelect.value = provider.authMode ?? 'bearer';
-    this.renderHeaderRows(provider.headers);
-    elements.transportSelect.value = provider.transport;
-    elements.reasoningFormatSelect.value = model?.reasoningFormat ?? 'none';
-    elements.customEffortsInput.value = (model?.customReasoningEfforts ?? []).join(', ');
-    elements.supportsStreamingCheckbox.checked = model?.supportsStreaming ?? true;
-    elements.temperatureInput.value = provider.defaultGenerationParams.temperature?.toString() ?? '';
+    const draft = this.providerDrafts[provider.id];
+    elements.profileName.value = draft?.profileName ?? provider.name;
+    elements.apiUrl.value = draft?.apiUrl ?? provider.baseUrl;
+    elements.apiKey.value = draft?.apiKey ?? provider.apiKey;
+    elements.modelName.value = draft?.modelName ?? model?.modelId ?? provider.defaultModel;
+    elements.authModeSelect.value = draft?.authMode ?? provider.authMode ?? 'bearer';
+    this.renderHeaderRows(draft?.headers ?? provider.headers);
+    elements.transportSelect.value = draft?.transport ?? provider.transport;
+    elements.reasoningFormatSelect.value = draft?.reasoningFormat ?? model?.reasoningFormat ?? 'none';
+    elements.customEffortsInput.value = draft?.customEfforts ?? (model?.customReasoningEfforts ?? []).join(', ');
+    elements.supportsStreamingCheckbox.checked = draft?.supportsStreaming ?? model?.supportsStreaming ?? true;
+    elements.temperatureInput.value = draft?.temperature ?? provider.defaultGenerationParams.temperature?.toString() ?? '';
+  }
+
+  private captureProviderDraft(): ProviderDraft | null {
+    if (!this.selectedProviderId) return null;
+    return {
+      profileName: elements.profileName.value,
+      apiUrl: elements.apiUrl.value,
+      apiKey: elements.apiKey.value,
+      modelName: elements.modelName.value,
+      authMode: elements.authModeSelect.value,
+      headers: Array.from(elements.headerRows.querySelectorAll('.header-row')).map((row) => ({
+        name: (row.querySelector('.header-name') as HTMLInputElement | null)?.value ?? '',
+        value: (row.querySelector('.header-value') as HTMLInputElement | null)?.value ?? ''
+      })),
+      transport: elements.transportSelect.value,
+      reasoningFormat: elements.reasoningFormatSelect.value,
+      customEfforts: elements.customEffortsInput.value,
+      supportsStreaming: elements.supportsStreamingCheckbox.checked,
+      temperature: elements.temperatureInput.value,
+      updatedAt: nowIso()
+    };
+  }
+
+  private scheduleProviderDraftSave() {
+    if (!this.selectedProviderId) return;
+    const draft = this.captureProviderDraft();
+    if (!draft) return;
+    this.providerDrafts[this.selectedProviderId] = draft;
+    if (this.draftSaveTimer !== null) window.clearTimeout(this.draftSaveTimer);
+    this.draftSaveTimer = window.setTimeout(() => {
+      this.draftSaveTimer = null;
+      void chrome.storage.local.set({ [PROVIDER_DRAFTS_KEY]: this.providerDrafts });
+    }, 180);
+    this.clearStatusTimer(elements.status);
+    elements.status.textContent = t('popup__statusUnsaved');
+    elements.status.className = 'status show draft';
+    elements.status.setAttribute('role', 'status');
+  }
+
+  private clearProviderDraft(providerId: string) {
+    delete this.providerDrafts[providerId];
+    void chrome.storage.local.set({ [PROVIDER_DRAFTS_KEY]: this.providerDrafts });
   }
 
   private clearProviderForm() {
@@ -577,9 +702,11 @@ class PopupApp {
   }
 
   /** Rebuilds the custom-header editor, always leaving one blank row. */
-  private renderHeaderRows(headers: Record<string, string> | undefined) {
+  private renderHeaderRows(headers: Record<string, string> | Array<{ name: string; value: string }> | undefined) {
     elements.headerRows.innerHTML = '';
-    const entries = Object.entries(headers ?? {});
+    const entries: Array<[string, string]> = Array.isArray(headers)
+      ? headers.map((header) => [header.name, header.value])
+      : Object.entries(headers ?? {});
     if (entries.length === 0) {
       this.appendHeaderRow('', '');
       return;
@@ -747,6 +874,8 @@ class PopupApp {
     if (!await this.persist()) {
       return;
     }
+
+    this.clearProviderDraft(providerId);
     this.showStatus(elements.status, t('popup__statusSaved'), 'success');
   }
 
@@ -755,6 +884,7 @@ class PopupApp {
     if (!provider) return;
     this.confirm(t('popup__confirmDeleteProfile', provider.name), async () => {
       this.store.providers = this.store.providers.filter((item) => item.id !== provider.id);
+      this.clearProviderDraft(provider.id);
       this.selectedProviderId = this.store.providers[0]?.id ?? null;
       if (this.store.featureSettings.defaultProviderId === provider.id) {
         this.store.featureSettings.defaultProviderId = this.selectedProviderId;
@@ -775,8 +905,39 @@ class PopupApp {
   }
 
   private async testProvider() {
-    const provider = this.store.providers.find((item) => item.id === this.selectedProviderId);
-    if (!provider) return;
+    const providerId = this.selectedProviderId;
+    const current = this.store.providers.find((item) => item.id === providerId);
+    const { headers, error: headerError } = this.collectHeaders();
+    if (headerError) {
+      this.showStatus(elements.status, headerError, 'error');
+      return;
+    }
+    if (!current || !providerId) return;
+    const now = nowIso();
+    const provider: ProviderConfig = {
+      id: providerId,
+      name: elements.profileName.value.trim() || current.name,
+      baseUrl: elements.apiUrl.value.trim(),
+      apiKey: elements.apiKey.value.trim(),
+      transport: elements.transportSelect.value as ProviderConfig['transport'],
+      defaultModel: elements.modelName.value.trim(),
+      defaultGenerationParams: { temperature: toNullableNumber(elements.temperatureInput.value) },
+      headers,
+      authMode: elements.authModeSelect.value as ProviderConfig['authMode'],
+      modelCatalog: [{
+        modelId: elements.modelName.value.trim(),
+        displayName: elements.modelName.value.trim(),
+        supportsStreaming: elements.supportsStreamingCheckbox.checked,
+        reasoningFormat: resolveReasoningFormat(elements.reasoningFormatSelect.value),
+        customReasoningEfforts: normalizeCustomReasoningEfforts(elements.customEffortsInput.value)
+      }],
+      createdAt: current.createdAt ?? now,
+      updatedAt: now
+    };
+    if (this.testingProvider) return;
+    this.testingProvider = true;
+    elements.testBtn.disabled = true;
+    this.showStatus(elements.status, t('popup__statusTestRunning'), 'success');
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'TEST_PROVIDER',
@@ -789,6 +950,9 @@ class PopupApp {
       }
     } catch (error) {
       this.showStatus(elements.status, t('popup__statusTestFailed', getErrorText(error)), 'error');
+    } finally {
+      this.testingProvider = false;
+      elements.testBtn.disabled = false;
     }
   }
 
@@ -854,8 +1018,23 @@ class PopupApp {
 
   private fillPromptForm() {
     const prompt = this.store.prompts.find((item) => item.id === this.selectedPromptId);
-    elements.promptName.value = prompt?.name ?? '';
-    elements.promptContent.value = prompt?.content ?? '';
+    const draft = this.selectedPromptId ? this.promptDrafts[this.selectedPromptId] : null;
+    elements.promptName.value = draft?.name ?? prompt?.name ?? '';
+    elements.promptContent.value = draft?.content ?? prompt?.content ?? '';
+  }
+
+  private schedulePromptDraftSave() {
+    if (!this.selectedPromptId) return;
+    this.promptDrafts[this.selectedPromptId] = {
+      name: elements.promptName.value,
+      content: elements.promptContent.value,
+      updatedAt: nowIso()
+    };
+    void chrome.storage.local.set({ [PROMPT_DRAFTS_KEY]: this.promptDrafts });
+    this.clearStatusTimer(elements.promptStatus);
+    elements.promptStatus.textContent = t('popup__statusUnsaved');
+    elements.promptStatus.className = 'status show draft';
+    elements.promptStatus.setAttribute('role', 'status');
   }
 
   private async createPrompt() {
@@ -893,6 +1072,8 @@ class PopupApp {
     if (!await this.persist()) {
       return;
     }
+    delete this.promptDrafts[promptId];
+    await chrome.storage.local.set({ [PROMPT_DRAFTS_KEY]: this.promptDrafts });
     this.showStatus(elements.promptStatus, t('prompt__statusSaved'), 'success');
   }
 
@@ -901,6 +1082,8 @@ class PopupApp {
     if (!prompt) return;
     this.confirm(t('prompt__confirmDelete', prompt.name), async () => {
       this.store.prompts = this.store.prompts.filter((item) => item.id !== prompt.id);
+      delete this.promptDrafts[prompt.id];
+      await chrome.storage.local.set({ [PROMPT_DRAFTS_KEY]: this.promptDrafts });
       this.selectedPromptId = this.store.prompts[0]?.id ?? null;
       if (this.store.featureSettings.defaultPromptId === prompt.id) {
         this.store.featureSettings.defaultPromptId = null;
@@ -1119,9 +1302,25 @@ class PopupApp {
   }
 
   private showStatus(target: HTMLElement, text: string, type: 'success' | 'error') {
+    this.clearStatusTimer(target);
     target.textContent = text;
     target.className = `status show ${type}`;
-    window.setTimeout(() => target.classList.remove('show'), 2200);
+    target.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    if (type === 'success') {
+      const timer = window.setTimeout(() => {
+        target.classList.remove('show');
+        this.statusTimers.delete(target);
+      }, 3200);
+      this.statusTimers.set(target, timer);
+    }
+  }
+
+  private clearStatusTimer(target: HTMLElement) {
+    const timer = this.statusTimers.get(target);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.statusTimers.delete(target);
+    }
   }
 
   private exportPayload(format: string, basename: string, payload: unknown) {

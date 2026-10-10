@@ -99,6 +99,26 @@
     "message": "Connection failed: $1",
     "description": "Connection failed message with placeholder"
   },
+  "popup__statusTestRunning": {
+    "message": "Testing current draft…",
+    "description": "Connection test in progress"
+  },
+  "popup__statusUnsaved": {
+    "message": "Draft saved locally · Save to apply",
+    "description": "Unsaved provider draft status"
+  },
+  "popup__btnOpenSettings": {
+    "message": "Full settings",
+    "description": "Open the full settings page"
+  },
+  "chat__jumpToLatest": {
+    "message": "Jump to latest",
+    "description": "Button to return to newest chat content"
+  },
+  "chat__inputAriaLabel": {
+    "message": "Message",
+    "description": "Accessible label for the chat composer"
+  },
   "popup__statusImportFailed": {
     "message": "Import failed: $1",
     "description": "Import failed message with placeholder"
@@ -753,6 +773,10 @@
         "content": "$1"
       }
     }
+  },
+  "content__renameChat": {
+    "message": "Rename chat",
+    "description": "Accessible label for the chat window title rename control"
   },
   "chat__settingsModel": {
     "message": "Model",

@@ -99,6 +99,26 @@
     "message": "连接失败：$1",
     "description": "连接失败消息（带占位符）"
   },
+  "popup__statusTestRunning": {
+    "message": "正在测试当前草稿…",
+    "description": "连接测试进行中"
+  },
+  "popup__statusUnsaved": {
+    "message": "草稿已本地保留 · 点击保存后生效",
+    "description": "未应用的配置草稿状态"
+  },
+  "popup__btnOpenSettings": {
+    "message": "完整设置",
+    "description": "打开完整设置页"
+  },
+  "chat__jumpToLatest": {
+    "message": "回到最新",
+    "description": "返回最新聊天内容按钮"
+  },
+  "chat__inputAriaLabel": {
+    "message": "消息",
+    "description": "聊天输入框的无障碍标签"
+  },
   "popup__statusImportFailed": {
     "message": "导入失败：$1",
     "description": "导入失败消息（带占位符）"
@@ -753,6 +773,10 @@
         "content": "$1"
       }
     }
+  },
+  "content__renameChat": {
+    "message": "重命名对话",
+    "description": "聊天窗口标题重命名控件的无障碍标签"
   },
   "chat__settingsModel": {
     "message": "模型",
