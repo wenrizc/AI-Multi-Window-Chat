@@ -28,6 +28,24 @@ beforeEach(() => {
 });
 
 describe('chat completions parsing', () => {
+  it.each([
+    { reasoning_content: 'think' },
+    { reasoning_content: '', reasoning: 'think' },
+    { thinking: 'think' },
+    { thought: 'think' },
+    { content: [{ type: 'thinking', text: 'think' }, { type: 'text', text: 'answer' }] }
+  ])('separates compatible reasoning fields from the answer: %j', async (fields) => {
+    server.use(http.post(`${TEST_BASE_URL}/chat/completions`, () =>
+      HttpResponse.json({ choices: [{ message: { content: 'answer', ...fields } }] })
+    ));
+    const result = await completeProviderTurn({
+      provider: createProvider(), model: createModel(),
+      messages: [{ role: 'user', content: 'hello' }],
+      generationParams: { temperature: null }, signal: new AbortController().signal
+    });
+    expect(result).toMatchObject({ content: 'answer', reasoningSummary: 'think', reasoningContent: 'think' });
+  });
+
   it('replays reasoning_content for ordinary assistant history messages', async () => {
     server.use(
       http.post(`${TEST_BASE_URL}/chat/completions`, async ({ request }) => {
@@ -106,6 +124,29 @@ describe('chat completions parsing', () => {
     expect(turn.usage?.inputTokens).toBe(11);
     expect(turn.usage?.outputTokens).toBe(7);
     expect(turn.usage?.reasoningTokens).toBe(2);
+  });
+});
+
+describe('compatible Responses reasoning', () => {
+  it.each([
+    { output: [{ type: 'reasoning', summary: [{ text: 'think' }] }] },
+    { output: [{ type: 'reasoning', summary: [], content: [{ type: 'text', text: 'think' }] }] },
+    { output: [{ type: 'thinking', text: 'think' }] },
+    { output: [{ type: 'reasoning_content', reasoning_content: 'think' }] },
+    { output: [], reasoning_content: 'think' },
+    { reasoning: 'think' }
+  ])('keeps reasoning separate from output text: %j', async (fields) => {
+    const output = fields.output ?? [];
+    server.use(http.post(`${TEST_BASE_URL}/responses`, () => HttpResponse.json({
+      ...fields,
+      output: [...output, { type: 'message', content: [{ type: 'output_text', text: 'answer' }] }]
+    })));
+    const result = await completeProviderTurn({
+      provider: createProvider({ transport: 'responses' }), model: createModel(),
+      messages: [{ role: 'user', content: 'hello' }],
+      generationParams: { temperature: null }, signal: new AbortController().signal
+    });
+    expect(result).toMatchObject({ content: 'answer', reasoningSummary: 'think' });
   });
 });
 

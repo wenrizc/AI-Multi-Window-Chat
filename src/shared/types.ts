@@ -118,6 +118,8 @@ export interface PersistedMessage {
   id: string;
   role: ChatRole;
   content: string;
+  /** Files attached to this turn, retained so history can render them. */
+  attachments?: ChatAttachment[];
   /**
    * Id of the preceding message in this message's branch, or `null` for a root
    * message. Messages that share a `parentId` (and role) are versions of the

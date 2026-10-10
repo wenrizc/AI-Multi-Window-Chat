@@ -98,6 +98,39 @@ beforeEach(() => {
 });
 
 describe('background chat streaming', () => {
+  it.each(['chat_completions', 'responses'] as const)('sends and persists images exactly once with %s', async (transport) => {
+    seedStore({ providers: [createProvider({ transport })] });
+    const attachment = { id: 'image-1', name: 'photo.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,YQ==', status: 'ready' as const };
+    useScript(transport, [({ body }) => {
+      const messages = (transport === 'responses' ? body.input : body.messages) as Array<{ content: unknown }>;
+      expect(messages[0].content).toEqual(transport === 'responses'
+        ? [{ type: 'input_text', text: 'describe' }, { type: 'input_image', image_url: attachment.dataUrl }]
+        : [{ type: 'text', text: 'describe' }, { type: 'image_url', image_url: { url: attachment.dataUrl } }]);
+      return llmTurn(transport, { content: 'A photo.' });
+    }, ({ body }) => {
+      const messages = (transport === 'responses' ? body.input : body.messages) as Array<{ content: unknown }>;
+      expect(messages[0].content).toEqual(transport === 'responses'
+        ? [{ type: 'input_text', text: 'describe' }, { type: 'input_image', image_url: attachment.dataUrl }]
+        : [{ type: 'text', text: 'describe' }, { type: 'image_url', image_url: { url: attachment.dataUrl } }]);
+      return llmTurn(transport, { content: 'A photo again.' });
+    }]);
+    const port = connect();
+    const request = createChatRequest({
+      userMessage: 'describe', userMessageId: 'image-user', attachments: [attachment],
+      messages: [{ role: 'user', content: 'describe' }]
+    });
+    port.emit({ type: 'start_chat', payload: request });
+    await waitForEvent(port, event => event.type === 'completed');
+    expect(currentStore().chatHistory[0].messages[0].attachments).toEqual([attachment]);
+    expect(request.messages[0].content).toBe('describe');
+    port.emit({ type: 'start_chat', payload: createChatRequest({
+      ...request, requestId: 'regenerate-image', appendUserMessage: false, parentMessageId: 'image-user',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'describe' }, { type: 'image_url', image_url: { url: attachment.dataUrl } }] }]
+    }) });
+    await waitForEvent(port, event => event.type === 'completed' && event.requestId === 'regenerate-image');
+    expect(currentStore().chatHistory[0].messages.filter(message => message.role === 'user')).toHaveLength(1);
+  });
+
   it('streams a reply and persists the conversation', async () => {
     seedStore({ providers: [createProvider()] });
     server.use(

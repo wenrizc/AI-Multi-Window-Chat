@@ -58,6 +58,7 @@ function createPersistedMessage(input: {
   providerId: string | null;
   modelId: string | null;
   promptId: string | null;
+  attachments?: PersistedMessage['attachments'];
   reasoningSummary?: string | null;
   toolCalls?: PersistedMessage['toolCalls'];
   sources?: PersistedMessage['sources'];
@@ -68,6 +69,7 @@ function createPersistedMessage(input: {
     id: input.id ?? uid('msg'),
     role: input.role,
     content: input.content,
+    attachments: input.attachments ?? [],
     parentId: input.parentId ?? null,
     reasoningSummary: input.reasoningSummary ?? null,
     toolCalls: input.toolCalls ?? [],
@@ -132,7 +134,8 @@ async function persistConversation(input: {
       mode: input.request.mode,
       providerId: input.request.providerId,
       modelId: input.request.modelId,
-      promptId: input.request.promptId
+      promptId: input.request.promptId,
+      attachments: input.request.attachments
     })];
   }
 
@@ -145,6 +148,7 @@ async function persistConversation(input: {
     providerId: input.request.providerId,
     modelId: input.request.modelId,
     promptId: input.request.promptId,
+    attachments: [],
     reasoningSummary: input.reasoningSummary,
     toolCalls: input.toolCalls,
     sources: input.sources,
@@ -202,7 +206,8 @@ async function persistUserMessage(request: ChatRequest) {
     mode: request.mode,
     providerId: request.providerId,
     modelId: request.modelId,
-    promptId: request.promptId
+    promptId: request.promptId,
+    attachments: request.attachments
   });
 
   const messages = existing ? [...existing.messages, userMessage] : [userMessage];
@@ -295,13 +300,13 @@ async function handleChatRequest(port: chrome.runtime.Port, request: ChatRequest
     let messages: ChatRequestMessage[] = request.messages;
     if (request.attachments?.length && request.mode === 'chat') {
       const last = messages[messages.length - 1];
-      if (last?.role === 'user') {
-        last.content = [
-          { type: 'text', text: typeof last.content === 'string' ? last.content : request.userMessage },
+      if (last?.role === 'user' && typeof last.content === 'string') {
+        messages = [...messages.slice(0, -1), { ...last, content: [
+          { type: 'text', text: last.content },
           ...request.attachments
             .filter((attachment) => attachment.status === 'ready' && attachment.mimeType.startsWith('image/'))
             .map((attachment) => ({ type: 'image_url' as const, image_url: { url: attachment.dataUrl } }))
-        ];
+        ] }];
       }
     }
 

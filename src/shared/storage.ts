@@ -235,10 +235,25 @@ function normalizeMessage(value: unknown, index: number): PersistedMessage | nul
     return null;
   }
 
+  const attachments = Array.isArray(value.attachments)
+    ? value.attachments.flatMap((item, attachmentIndex) => {
+      if (!isRecord(item) || typeof item.dataUrl !== 'string' || !item.dataUrl) return [];
+      if (typeof item.mimeType !== 'string' || !item.mimeType.startsWith('image/')) return [];
+      return [{
+        id: typeof item.id === 'string' && item.id ? item.id : `attachment-${index + 1}-${attachmentIndex + 1}`,
+        name: typeof item.name === 'string' ? item.name : 'image',
+        mimeType: item.mimeType,
+        dataUrl: item.dataUrl,
+        status: 'ready' as const
+      }];
+    })
+    : [];
+
   return {
     id: typeof value.id === 'string' && value.id ? value.id : `message-${index + 1}`,
     role,
     content: value.content,
+    attachments,
     parentId: typeof value.parentId === 'string' && value.parentId ? value.parentId : null,
     reasoningSummary: typeof value.reasoningSummary === 'string' ? value.reasoningSummary : null,
     toolCalls: normalizeToolCalls(value.toolCalls),

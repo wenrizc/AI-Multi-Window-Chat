@@ -29,6 +29,26 @@ function run(transport: Transport, events: StreamEvent[]) {
 }
 
 describe.each<Transport>(['chat_completions', 'responses'])('%s streaming transport', transport => {
+  it('separates inline reasoning blocks and compatible delta events from answer text', async () => {
+    const frames = transport === 'responses' ? [
+      { type: 'response.reasoning_text.delta', delta: { text: 'think' } },
+      { type: 'response.thinking.delta', delta: [{ text: ' more' }] },
+      { type: 'response.reasoning_content.delta', reasoning_content: ' still' },
+      { type: 'response.output_text.delta', delta: 'answer' },
+      { type: 'unrelated.reasoning.delta', delta: 'ignored' }
+    ] : [
+      { choices: [{ delta: { content: [{ type: 'thinking', text: 'think' }, { type: 'text', text: 'answer' }] } }] },
+      { choices: [{ delta: { reasoning_content: '', reasoning: ' more' } }] },
+      { choices: [{ delta: { thought: ' still' } }] }
+    ];
+    script = scriptedLlm(transport, [() => byteSse(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join(''))]);
+    server.use(script.handler);
+    const events: StreamEvent[] = [];
+    await run(transport, events);
+    expect(events.filter(event => event.type === 'contentDelta').map(event => event.delta).join('')).toBe('answer');
+    expect(events.filter(event => event.type === 'reasoningDelta').map(event => event.delta).join('')).toBe('think more still');
+  });
+
   it('aborts a provider that never sends headers and reports a retryable timeout', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const arrived = deferred<void>();

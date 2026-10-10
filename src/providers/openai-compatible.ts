@@ -296,8 +296,33 @@ function extractTextFromContent(value: unknown): string {
     .join('');
 }
 
+function isReasoningBlock(value: unknown): boolean {
+  return !!value && typeof value === 'object'
+    && ['reasoning', 'reasoning_content', 'thinking', 'thought'].includes(String((value as Record<string, unknown>).type ?? ''));
+}
+
+function extractChatText(value: unknown): string {
+  return extractTextFromContent(Array.isArray(value) ? value.filter((item) => !isReasoningBlock(item)) : value);
+}
+
 function extractChatReasoning(value: Record<string, unknown>): string {
-  return typeof value.reasoning_content === 'string' ? value.reasoning_content : '';
+  for (const key of ['reasoning_content', 'reasoning', 'thinking', 'thought']) {
+    const candidate = value[key];
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  // A few OpenAI-compatible gateways put reasoning blocks in delta.content.
+  if (Array.isArray(value.content)) {
+    return value.content
+      .filter(isReasoningBlock)
+      .map((item) => {
+        const block = item as Record<string, unknown>;
+        return extractTextFromContent(block.text ?? block.content);
+      })
+      .join('');
+  }
+  return '';
 }
 
 function normalizeToolArguments(value: unknown): string {
@@ -354,6 +379,9 @@ function extractResponsesText(payload: Record<string, unknown>): string {
       continue;
     }
     const entry = item as Record<string, unknown>;
+    if (isReasoningBlock(entry)) {
+      continue;
+    }
     if (!Array.isArray(entry.content)) {
       continue;
     }
@@ -372,7 +400,7 @@ function extractResponsesText(payload: Record<string, unknown>): string {
 
 function extractResponsesReasoning(payload: Record<string, unknown>): string {
   if (!Array.isArray(payload.output)) {
-    return '';
+    return extractChatReasoning(payload);
   }
 
   const fragments: string[] = [];
@@ -381,16 +409,31 @@ function extractResponsesReasoning(payload: Record<string, unknown>): string {
       continue;
     }
     const entry = item as Record<string, unknown>;
-    if (entry.type === 'reasoning' && Array.isArray(entry.summary)) {
-      for (const summary of entry.summary) {
-        if (!summary || typeof summary !== 'object') {
-          continue;
-        }
-        fragments.push(String((summary as Record<string, unknown>).text ?? ''));
-      }
+    if (isReasoningBlock(entry)) {
+      const summary = extractTextFromContent(entry.summary);
+      fragments.push(summary || extractTextFromContent(entry.text ?? entry.content ?? entry.reasoning_content ?? entry.reasoning));
     }
   }
-  return fragments.join('');
+  return fragments.join('') || extractChatReasoning(payload);
+}
+
+function extractResponsesReasoningDelta(payload: Record<string, unknown>): string {
+  const candidate = payload.delta ?? payload.text ?? payload.reasoning_content ?? payload.reasoning;
+  if (typeof candidate === 'string') {
+    return candidate;
+  }
+  if (Array.isArray(candidate)) {
+    return extractTextFromContent(candidate);
+  }
+  if (candidate && typeof candidate === 'object') {
+    const item = candidate as Record<string, unknown>;
+    return typeof item.text === 'string'
+      ? item.text
+      : typeof item.content === 'string'
+        ? item.content
+        : '';
+  }
+  return '';
 }
 
 function extractResponsesToolCalls(payload: Record<string, unknown>): ToolCall[] {
@@ -563,7 +606,7 @@ async function streamChatCompletions(
       const choice = Array.isArray(payload.choices) ? payload.choices[0] as Record<string, unknown> : null;
       const delta = choice?.delta && typeof choice.delta === 'object' ? choice.delta as Record<string, unknown> : {};
 
-      const textDelta = extractTextFromContent(delta.content);
+      const textDelta = extractChatText(delta.content);
       const reasoningDelta = extractChatReasoning(delta);
 
       if (textDelta) {
@@ -665,8 +708,13 @@ async function streamResponses(
         continue;
       }
 
-      if (type === 'response.reasoning_summary_text.delta') {
-        const delta = String(payload.delta ?? '');
+      if (type === 'response.reasoning_summary_text.delta'
+        || type === 'response.reasoning_summary.delta'
+        || type === 'response.reasoning.delta'
+        || type === 'response.reasoning_content.delta'
+        || type === 'response.reasoning_text.delta'
+        || type === 'response.thinking.delta') {
+        const delta = extractResponsesReasoningDelta(payload);
         if (delta) {
           emit(callbacks, { type: 'reasoningDelta', delta });
         }
@@ -760,7 +808,7 @@ async function completeChatTurn(input: {
     const reasoningContent = extractChatReasoning(message);
 
     return applyDsmlToolCallFallback({
-      content: extractTextFromContent(message.content),
+      content: extractChatText(message.content),
       reasoningSummary: compactText(reasoningContent),
       reasoningContent: reasoningContent || null,
       usage: mergeUsagePayload(null, payload.usage as Record<string, unknown> | undefined),

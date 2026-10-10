@@ -28,7 +28,7 @@ import {
 } from '../../src/shared/storage';
 import type { ChatIndexEntry, ChatSession, RootStore, StorageConfig } from '../../src/shared/types';
 import { getChromeState } from '../helpers/chrome-mock';
-import { createChatSession, createModel, createProvider } from '../helpers/factories';
+import { createChatSession, createModel, createPersistedMessage, createProvider } from '../helpers/factories';
 
 type State = ReturnType<typeof getChromeState>;
 
@@ -346,6 +346,24 @@ describe('configuration writes', () => {
 });
 
 describe('chat sessions', () => {
+  it('retains image attachments across writes and reads and repairs missing attachment IDs', async () => {
+    const attachments = [
+      { id: 'image-1', name: 'one.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,YQ==', status: 'ready' as const },
+      { name: 'two.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,Yg==' },
+      { name: 'three.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,Yw==' },
+      { name: 'invalid.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,YQ==' },
+      { name: 'empty.png', mimeType: 'image/png', dataUrl: '' }
+    ];
+    const session = createChatSession({ messages: [createPersistedMessage({
+      role: 'user', attachments: attachments as NonNullable<ChatSession['messages'][number]['attachments']>
+    })] });
+    await upsertChatSession(session);
+    const restored = await getChatSession(session.chatId);
+    expect(restored?.messages[0].attachments).toHaveLength(3);
+    expect(restored?.messages[0].attachments?.[0]).toEqual(attachments[0]);
+    expect(new Set(restored?.messages[0].attachments?.map(item => item.id)).size).toBe(3);
+  });
+
   it('unshifts new sessions, replaces existing ones and keeps the index in sync', async () => {
     const state = getChromeState();
     await ensureStore();
