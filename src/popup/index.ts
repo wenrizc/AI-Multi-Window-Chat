@@ -31,7 +31,7 @@ import {
 } from '../shared/utils';
 
 type TabName = 'config' | 'search' | 'prompts' | 'history';
-type OnboardingPresetId = 'openai' | 'deepseek' | 'qwen';
+type OnboardingPresetId = 'openai' | 'deepseek';
 type ProviderImportPayload = {
   providers?: ProviderConfig[];
   defaultProviderId?: string | null;
@@ -75,13 +75,6 @@ const ONBOARDING_PRESETS: Record<OnboardingPresetId, {
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
-    transport: 'chat_completions',
-    reasoningFormat: 'none'
-  },
-  qwen: {
-    name: 'Qwen',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
     transport: 'chat_completions',
     reasoningFormat: 'none'
   }
@@ -172,7 +165,7 @@ class PopupApp {
   private statusTimers = new WeakMap<HTMLElement, number>();
 
   async init() {
-    if (window.innerWidth > 700) {
+    if (new URLSearchParams(window.location.search).get('view') === 'settings' || window.innerWidth > 700) {
       document.body.classList.add('settings-page');
     }
     document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';

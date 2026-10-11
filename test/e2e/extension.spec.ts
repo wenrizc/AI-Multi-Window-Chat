@@ -94,6 +94,27 @@ test.afterAll(async () => {
   await mock?.stop();
 });
 
+test('full settings keeps advanced fields visible in narrow windows', async () => {
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 568, height: 600 });
+  const optionsPage = await serviceWorker.evaluate(() => chrome.runtime.getManifest().options_ui!.page);
+  await page.goto(`chrome-extension://${extensionId}/${optionsPage}`);
+  await expect(page.locator('body')).toHaveClass('settings-page');
+  await expect(page.locator('#transportSelect')).toBeVisible();
+  await expect(page.locator('#openSettingsBtn')).toBeHidden();
+  await expect(page.locator('.preset-btn')).toHaveCount(2);
+  await expect(page.locator('[data-onboarding-preset]')).toHaveCount(2);
+  for (const width of [568, 360, 1200]) {
+    await page.setViewportSize({ width, height: 600 });
+    await expect(page.locator('#transportSelect')).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(overflow).toBe(false);
+    await page.locator('#saveBtn').scrollIntoViewIfNeeded();
+    await expect(page.locator('#saveBtn')).toBeInViewport();
+  }
+  await page.close();
+});
+
 test('restores prompt switches and no-prompt sessions in the packaged extension', async () => {
   let page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html?view=settings`);

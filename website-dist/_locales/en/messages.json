@@ -311,10 +311,6 @@
     "message": "DeepSeek",
     "description": "Preset button for DeepSeek"
   },
-  "popup__presetQwen": {
-    "message": "Qwen",
-    "description": "Preset button for Qwen"
-  },
   "popup__defaultConfirmText": {
     "message": "Are you sure you want to perform this action?",
     "description": "Default confirmation dialog text"

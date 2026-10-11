@@ -185,7 +185,7 @@ function collectManifestFiles(manifest) {
   add(manifest.action?.default_popup);
   add(manifest.action?.default_icon ? Object.values(manifest.action.default_icon) : []);
   add(manifest.icons ? Object.values(manifest.icons) : []);
-  add(manifest.options_ui?.page);
+  add(manifest.options_ui?.page?.split(/[?#]/)[0]);
 
   if (Array.isArray(manifest.content_scripts)) {
     for (const script of manifest.content_scripts) {

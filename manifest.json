@@ -54,7 +54,7 @@
     "default_popup": "popup.html"
   },
   "options_ui": {
-    "page": "popup.html",
+    "page": "popup.html?view=settings",
     "open_in_tab": true
   },
   "homepage_url": "https://wenrizc.github.io/AI-Multi-Window-Chat/"
