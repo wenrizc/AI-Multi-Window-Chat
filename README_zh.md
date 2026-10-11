@@ -1,4 +1,4 @@
-# AI 多窗口聊天
+# AI 多窗口对话
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 ## 概述
 
-AI 多窗口聊天允许你在任意网页上打开多个可拖拽的聊天窗口，将选中的文字发送到新对话，并管理/导出对话历史。通过配置 API 地址、密钥和模型，可对接任何 OpenAI 兼容接口。
+AI 多窗口对话允许你在任意网页上打开多个可拖拽的聊天窗口，将选中的文字发送到新对话，并管理/导出对话历史。通过配置 API 地址、密钥和模型，可对接任何 OpenAI 兼容接口。
 
 **项目网站**: [https://wenrizc.github.io/AI-Multi-Window-Chat/](https://wenrizc.github.io/AI-Multi-Window-Chat/)
 
