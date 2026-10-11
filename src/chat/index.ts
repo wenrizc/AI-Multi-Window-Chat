@@ -718,6 +718,7 @@ class ChatWindowApp {
     const prompt = this.prompts.find((item) => item.id === this.promptId);
     const chips = [provider?.name || t('chat__noProvider'), model?.displayName || model?.modelId]
       .filter(Boolean)
+      .filter((value, index, values) => values.indexOf(value) === index)
       .map((value) => `<span class="context-chip">${escapeHtml(String(value))}</span>`);
     if (prompt) chips.push(`<span class="context-chip">${escapeHtml(prompt.name)}</span>`);
     if (this.elements.searchToggle.checked) chips.push(`<span class="context-chip">${escapeHtml(t('chat__searchToggle'))}</span>`);
