@@ -168,7 +168,6 @@ class PopupApp {
     if (new URLSearchParams(window.location.search).get('view') === 'settings' || window.innerWidth > 700) {
       document.body.classList.add('settings-page');
     }
-    document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
     if (typeof updatePageTranslations === 'function') {
       updatePageTranslations();
     }
@@ -981,10 +980,7 @@ class PopupApp {
         }
         this.showStatus(
           elements.status,
-          t('config__statusImported', {
-            addedCount: String(result.addedCount),
-            updatedCount: String(result.updatedCount)
-          }),
+          t('config__statusImported', [result.addedCount, result.updatedCount]),
           'success'
         );
       });
@@ -1115,10 +1111,7 @@ class PopupApp {
         }
         this.showStatus(
           elements.promptStatus,
-          t('config__statusImported', {
-            addedCount: String(result.addedCount),
-            updatedCount: String(result.updatedCount)
-          }),
+          t('config__statusImported', [result.addedCount, result.updatedCount]),
           'success'
         );
       });
@@ -1141,7 +1134,7 @@ class PopupApp {
           <div class="history-item-icon">💬</div>
           <div class="history-item-title">${escapeHtml(chat.title)}</div>
         </div>
-        <div class="history-item-meta">${new Date(chat.updatedAt).toLocaleString()} · ${escapeHtml(t('history__messageCount', chat.messages.length))}</div>
+        <div class="history-item-meta">${new Date(chat.updatedAt).toLocaleString(document.documentElement.lang)} · ${escapeHtml(t(chat.messages.length === 1 ? 'history__messageCountOne' : 'history__messageCount', chat.messages.length))}</div>
         <div class="history-item-summary">${escapeHtml(this.getHistorySummary(chat))}</div>
         <div class="history-item-actions">
           <button class="btn btn-secondary btn-small" data-action="resume" data-id="${escapeHtml(chat.chatId)}">${escapeHtml(t('history__btnResume'))}</button>
@@ -1347,7 +1340,7 @@ function parseImportPayload(text: string): unknown {
     return JSON.parse(fencedJson[1].trim());
   }
 
-  throw new Error('Unsupported import format.');
+  throw new Error(t('popup__errorUnsupportedImport'));
 }
 
 function resolveImportedDefaultProviderId(
@@ -1406,6 +1399,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getErrorText(error: unknown): string {
+  if (error instanceof SyntaxError) return t('popup__errorInvalidImportJson');
   if (error instanceof Error) {
     return error.message;
   }

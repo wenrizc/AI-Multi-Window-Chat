@@ -1201,7 +1201,7 @@
       <button id="importProfilesBtn" class="btn btn-secondary btn-small" data-i18n="config__btnImport">Import</button>
       <button id="openSettingsBtn" class="btn btn-secondary btn-small quick-settings-link" data-i18n="popup__btnOpenSettings">完整设置</button>
       <div class="config-toolbar-right">
-        <label for="activeProfileSelect" data-i18n="popup__labelActiveProfile">Default</label>
+        <label for="activeProfileSelect" data-i18n="popup__labelActiveProfile">Default configuration</label>
         <select id="activeProfileSelect"></select>
       </div>
     </div>
@@ -1311,7 +1311,7 @@
 
         <div class="action-row">
           <button id="testBtn" class="btn btn-secondary" data-i18n="popup__btnTestConnection">Test</button>
-          <button id="setActiveBtn" class="btn btn-secondary" data-i18n="popup__btnSetActive">Set Current</button>
+          <button id="setActiveBtn" class="btn btn-secondary" data-i18n="popup__btnSetActive">Set as default</button>
           <button id="saveBtn" class="btn btn-primary" data-i18n="popup__btnSaveProfile">Save</button>
           <button id="deleteBtn" class="btn btn-danger" data-i18n="popup__btnDeleteProfile">Delete</button>
         </div>
@@ -1490,7 +1490,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <div class="modal-title" data-i18n="history__modalExportTitle">Select Export Format</div>
-        <button class="modal-close" data-modal="exportModal">&times;</button>
+        <button class="modal-close" data-modal="exportModal" data-i18n-aria-label="content__btnClose" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <div class="export-options">

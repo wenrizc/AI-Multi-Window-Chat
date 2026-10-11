@@ -198,7 +198,7 @@ describe('i18n formatting', () => {
         cacheReadTokens: null,
         totalTokens: 215
       })
-    ).toBe('In 120 | Out 80 | Reason 15');
+    ).toBe('In 120 | Out 80 | Reasoning 15');
   });
 
   it('omits null usage fields', () => {
@@ -214,9 +214,14 @@ describe('i18n formatting', () => {
   });
 
   it('substitutes named placeholders through chrome.i18n', () => {
-    expect(i18nMessage('config__statusImported', { addedCount: '2', updatedCount: '1' })).toBe(
+    expect(i18nMessage('config__statusImported', [2, 1])).toBe(
       'Added 2, updated 1 items'
     );
+  });
+
+  it('normalizes single numeric substitutions and preserves inserted dollar signs', () => {
+    expect(i18nMessage('history__messageCountOne', 1)).toBe('1 message');
+    expect(i18nMessage('content__aiChatTitle', '$& $1 $$')).toBe('AI Chat $& $1 $$');
   });
 
   it('falls back to the key when a message is missing', () => {

@@ -44,8 +44,8 @@
     "description": "Profile name label"
   },
   "popup__labelActiveProfile": {
-    "message": "Default",
-    "description": "Active profile label"
+    "message": "Default configuration",
+    "description": "Default provider configuration selector"
   },
   "popup__btnAddProfile": {
     "message": "New",
@@ -60,8 +60,8 @@
     "description": "Delete profile button"
   },
   "popup__btnSetActive": {
-    "message": "Set Current",
-    "description": "Set active profile button"
+    "message": "Set as default",
+    "description": "Set default provider configuration button"
   },
   "popup__btnTestConnection": {
     "message": "Test",
@@ -84,7 +84,7 @@
     "description": "Save success message"
   },
   "popup__statusDeleted": {
-    "message": "Profile deleted",
+    "message": "Configuration deleted",
     "description": "Delete success message"
   },
   "popup__statusCopied": {
@@ -124,11 +124,11 @@
     "description": "Import failed message with placeholder"
   },
   "popup__statusSetActive": {
-    "message": "Current profile updated",
-    "description": "Active profile updated message"
+    "message": "Default configuration updated",
+    "description": "Default provider configuration updated message"
   },
   "popup__confirmDeleteProfile": {
-    "message": "Delete profile \"$1\"?",
+    "message": "Delete configuration \"$1\"?",
     "description": "Confirm delete profile message with placeholder"
   },
   "popup__confirmImportReplace": {
@@ -136,7 +136,7 @@
     "description": "Confirm import merge message"
   },
   "popup__defaultProfileName": {
-    "message": "Profile $1",
+    "message": "Configuration $1",
     "description": "Default profile name with index"
   },
   "history__empty": {
@@ -324,7 +324,7 @@
     "description": "Prompts tab"
   },
   "popup__untitledProvider": {
-    "message": "Untitled Provider",
+    "message": "Untitled Configuration",
     "description": "Fallback provider name when no name is entered"
   },
   "prompt__labelName": {
@@ -466,11 +466,11 @@
     "description": "Initialization failed with placeholder"
   },
   "chat__statusCreateProviderFirst": {
-    "message": "Please create a provider first.",
+    "message": "Please create a provider configuration first.",
     "description": "Prompt to create provider"
   },
   "chat__statusProviderNotFound": {
-    "message": "Provider not found.",
+    "message": "Provider configuration not found.",
     "description": "Provider not found status"
   },
   "chat__statusCompleted": {
@@ -597,12 +597,8 @@
     "message": "Storage: $1 used ($2%)",
     "description": "Storage usage indicator"
   },
-  "chat__reasoningSummary": {
-    "message": "Reasoning Summary",
-    "description": "Reasoning summary heading"
-  },
   "chat__noProvider": {
-    "message": "No Provider",
+    "message": "No configuration",
     "description": "No provider option"
   },
   "popup__labelTransport": {
@@ -706,7 +702,7 @@
     "description": "All time range option"
   },
   "popup__emptyProviders": {
-    "message": "No providers yet.",
+    "message": "No provider configurations yet.",
     "description": "Empty providers list message"
   },
   "prompt__emptyState": {
@@ -835,7 +831,7 @@
     "description": "Output token usage label with count"
   },
   "usage__reasoningTokens": {
-    "message": "Reason $1",
+    "message": "Reasoning $1",
     "description": "Reasoning token usage label with count"
   },
   "website__homeDocumentTitle": {
@@ -867,8 +863,8 @@
     "description": "Website feature for OpenAI compatibility"
   },
   "website__featureLightweight": {
-    "message": "History, prompts, and config import/export",
-    "description": "Website feature for lightweight design"
+    "message": "History export, plus prompt and configuration import/export",
+    "description": "Website feature for history export and configuration/prompt import/export"
   },
   "website__getStartedTitle": {
     "message": "Get Started",
@@ -903,7 +899,7 @@
     "description": "Website privacy policy title"
   },
   "website__privacyLastUpdated": {
-    "message": "Last updated: January 14, 2026",
+    "message": "Last updated: October 11, 2026",
     "description": "Website privacy policy last updated text"
   },
   "website__privacyIntro": {
@@ -935,7 +931,7 @@
     "description": "Website privacy settings bullet"
   },
   "website__privacyCollectionReasoning": {
-    "message": "Optional reasoning summaries, token usage, and estimated cost records",
+    "message": "Optional reasoning content and token usage records",
     "description": "Website privacy reasoning bullet"
   },
   "website__privacyCollectionSearch": {
@@ -971,7 +967,7 @@
     "description": "Website privacy usage search bullet"
   },
   "website__privacyNoAds": {
-    "message": "We do not use your data for advertising, analytics, or sell to third parties.",
+    "message": "We do not use your data for advertising or analytics, or sell it to third parties.",
     "description": "Website privacy no ads statement"
   },
   "website__privacyDataStorageTitle": {
@@ -1125,5 +1121,53 @@
   "chat__customEffortsHelp": {
     "message": "Applies only to this model. Separate levels with commas or new lines, then save the model configuration. Leave empty to remove custom levels.",
     "description": "chat__customEffortsHelp"
+  },
+  "common__locale": {
+    "message": "en",
+    "description": "Actual language of this catalog; keep this as a language tag"
+  },
+  "chat__btnRemoveAttachment": {
+    "message": "Remove attachment: $1",
+    "description": "Accessible attachment removal label with filename"
+  },
+  "popup__errorUnsupportedImport": {
+    "message": "Unsupported import format. Use JSON or a Markdown file with a JSON code block.",
+    "description": "Unsupported configuration import format"
+  },
+  "popup__errorInvalidImportJson": {
+    "message": "Invalid JSON in the import file.",
+    "description": "Invalid configuration import JSON"
+  },
+  "history__messageCountOne": {
+    "message": "$1 message",
+    "description": "History message count for a single message"
+  },
+  "chat__reasoningContent": {
+    "message": "Reasoning content",
+    "description": "Panel showing reasoning content or summaries"
+  },
+  "chat__toolUnsupported": {
+    "message": "Unsupported tool: $1",
+    "description": "Unsupported tool shown in results panel"
+  },
+  "chat__toolInvalidQuery": {
+    "message": "Expected a non-empty query string.",
+    "description": "Invalid search query shown in results panel"
+  },
+  "chat__toolQuery": {
+    "message": "Query: $1",
+    "description": "Search query in results panel"
+  },
+  "chat__toolUrl": {
+    "message": "URL: $1",
+    "description": "Search result URL"
+  },
+  "chat__toolSummary": {
+    "message": "Summary: $1",
+    "description": "Search result snippet"
+  },
+  "chat__toolCredits": {
+    "message": "Credits: $1",
+    "description": "Search credits used"
   }
 }

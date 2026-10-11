@@ -1,5 +1,6 @@
 (function (global) {
   let websiteMessages = null;
+  let fallbackMessages = null;
   let websiteLocaleDir = 'en';
 
   function hasChromeI18n() {
@@ -30,59 +31,39 @@
   }
 
   function resolveLocaleDir(locale) {
-    return String(locale || 'en').toLowerCase().startsWith('zh') ? 'zh_CN' : 'en';
+    // Match the extension's supported locale: Traditional Chinese falls back
+    // to English, rather than silently presenting Simplified Chinese.
+    const language = String(locale || 'en').replace(/_/g, '-');
+    return /^zh(?:-(?:cn|sg|hans)(?:-|$)|$)/i.test(language) ? 'zh_CN' : 'en';
   }
 
   function resolveDocumentLang(localeDir) {
     return localeDir === 'zh_CN' ? 'zh-CN' : 'en';
   }
 
-  function readMessageTemplate(key) {
-    if (hasChromeI18n()) {
-      return chrome.i18n.getMessage(key) || key;
-    }
-    return websiteMessages?.[key]?.message || key;
-  }
-
-  function replaceNamedPlaceholders(template, substitutions) {
-    let result = template;
-    for (const [name, rawValue] of Object.entries(substitutions)) {
-      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      result = result.replace(new RegExp(`\\$${escapedName}\\$`, 'g'), String(rawValue));
-    }
-    return result;
-  }
-
-  function replacePositionalPlaceholders(template, substitutions) {
-    return substitutions.reduce((result, value, index) => {
-      return result.replace(new RegExp(`\\$${index + 1}`, 'g'), String(value));
-    }, template);
+  function formatMessage(entry, values) {
+    const placeholders = Object.fromEntries(Object.entries(entry.placeholders || {})
+      .map(([name, definition]) => [name.toLowerCase(), definition.content]));
+    const positional = (template) => template.replace(/\$\$|\$(\d+)/g,
+      (token, index) => token === '$$' ? '$' : String(values[Number(index) - 1] ?? ''));
+    // Replace the original template once; inserted values are never reparsed.
+    return entry.message.replace(/\$\$|\$([a-z_][\w]*)\$|\$(\d+)/gi, (token, name, index) => {
+      if (token === '$$') return '$';
+      if (name) return positional(placeholders[name.toLowerCase()] || '');
+      return String(values[Number(index) - 1] ?? '');
+    });
   }
 
   function t(key, substitutions = []) {
-    if (substitutions && typeof substitutions === 'object' && !Array.isArray(substitutions)) {
-      try {
-        if (hasChromeI18n()) {
-          const message = chrome.i18n.getMessage(key, Object.values(substitutions));
-          return message || key;
-        }
-        const template = readMessageTemplate(key);
-        return replaceNamedPlaceholders(template, substitutions);
-      } catch (error) {
-        console.warn(`Translation not found for key: ${key}`, error);
-        return key;
-      }
-    }
-
-    const positional = toArray(substitutions);
+    const positional = toArray(substitutions).map(String);
 
     try {
       if (hasChromeI18n()) {
         const message = chrome.i18n.getMessage(key, positional);
         return message || key;
       }
-      const template = readMessageTemplate(key);
-      return replacePositionalPlaceholders(template, positional);
+      const entry = websiteMessages?.[key]?.message ? websiteMessages[key] : fallbackMessages?.[key];
+      return entry?.message ? formatMessage(entry, positional) : key;
     } catch (error) {
       console.warn(`Translation not found for key: ${key}`, error);
       return key;
@@ -97,15 +78,14 @@
       return;
     }
 
-    if (element.tagName === 'INPUT' && element.hasAttribute('placeholder')) {
-      element.placeholder = translation;
-      return;
-    }
-
     element.textContent = translation;
   }
 
   function updatePageTranslations() {
+    const language = t('common__locale');
+    if (language === 'en' || language === 'zh-CN') {
+      document.documentElement.lang = language;
+    }
     document.querySelectorAll('[data-i18n]').forEach((element) => {
       const key = element.getAttribute('data-i18n');
       if (key) {
@@ -150,9 +130,7 @@
   async function loadWebsiteMessages(localesPath) {
     const localeDir = resolveLocaleDir(detectPreferredLocale());
     const basePaths = Array.isArray(localesPath) ? localesPath : [localesPath];
-    const localeDirs = localeDir === 'en' ? ['en'] : [localeDir, 'en'];
-
-    for (const targetLocaleDir of localeDirs) {
+    async function loadLocale(targetLocaleDir) {
       for (const basePath of basePaths) {
         const normalizedBasePath = String(basePath || './_locales').replace(/\/+$/, '');
         const url = `${normalizedBasePath}/${targetLocaleDir}/messages.json`;
@@ -162,21 +140,24 @@
           if (!response.ok) {
             continue;
           }
-          websiteMessages = await response.json();
-          websiteLocaleDir = targetLocaleDir;
-          return;
+          const messages = await response.json();
+          if (!messages || typeof messages !== 'object' || Array.isArray(messages)) continue;
+          return messages;
         } catch (error) {
           console.warn(`Failed to load locale messages from ${url}`, error);
         }
       }
+      return null;
     }
-
-    throw new Error('Unable to load locale messages for website.');
+    fallbackMessages = await loadLocale('en');
+    websiteMessages = localeDir === 'en' ? fallbackMessages : await loadLocale(localeDir);
+    websiteLocaleDir = websiteMessages ? localeDir : 'en';
+    websiteMessages ||= fallbackMessages;
+    if (!websiteMessages) throw new Error('Unable to load locale messages for website.');
   }
 
   async function initPageTranslations(options = {}) {
     if (hasChromeI18n()) {
-      document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
       updatePageTranslations();
       return;
     }
@@ -184,6 +165,17 @@
     await loadWebsiteMessages(options.localesPath || './_locales');
     document.documentElement.lang = resolveDocumentLang(websiteLocaleDir);
     updatePageTranslations();
+    // Carry explicit language overrides across internal website navigation.
+    const lang = new URLSearchParams(global.location?.search || '').get('lang');
+    if (lang) {
+      document.querySelectorAll('a[href]').forEach((link) => {
+        const target = new URL(link.getAttribute('href'), global.location.href);
+        if (target.origin === global.location.origin && /\.html$/.test(target.pathname)) {
+          target.searchParams.set('lang', lang);
+          link.href = target.href;
+        }
+      });
+    }
   }
 
   global.t = t;

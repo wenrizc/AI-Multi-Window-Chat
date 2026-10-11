@@ -1,5 +1,6 @@
 import { PORT_NAME, META_KEY, LEGACY_STORAGE_KEY } from '../shared/constants';
 import { normalizeCustomReasoningEfforts } from '../shared/reasoning';
+import { formatToolDisplay } from '../shared/tool-display';
 import { getConfig, getChatPromptSelection, saveChatPromptSelection, upsertChatSession } from '../shared/storage';
 import { findLatestLeafUnder, getSiblingInfo, resolveActivePath } from '../shared/conversation-tree';
 import type { FailureCode } from '../shared/errors';
@@ -201,7 +202,6 @@ class ChatWindowApp {
   }
 
   private async init() {
-    document.documentElement.lang = chrome.i18n.getUILanguage() || 'en';
     if (typeof updatePageTranslations === 'function') {
       updatePageTranslations();
     }
@@ -496,7 +496,7 @@ class ChatWindowApp {
   private renderAttachments() {
     const tray = this.elements.attachmentTray;
     tray.hidden = this.attachments.length === 0;
-    tray.innerHTML = this.attachments.map((attachment) => `<div class="attachment-chip ${attachment.status}">${attachment.mimeType.startsWith('image/') && attachment.dataUrl ? `<img src="${attachment.dataUrl}" alt="">` : '<span class="attachment-file">TXT</span>'}<span class="attachment-name">${escapeHtml(attachment.name)}</span><span class="attachment-status">${escapeHtml(t(attachment.status === 'ready' ? 'chat__attachmentReady' : attachment.status === 'error' ? 'chat__attachmentError' : 'chat__attachmentParsing'))}</span><button type="button" data-remove-attachment="${attachment.id}" aria-label="Remove">×</button></div>`).join('');
+    tray.innerHTML = this.attachments.map((attachment) => `<div class="attachment-chip ${attachment.status}">${attachment.mimeType.startsWith('image/') && attachment.dataUrl ? `<img src="${attachment.dataUrl}" alt="">` : '<span class="attachment-file">TXT</span>'}<span class="attachment-name">${escapeHtml(attachment.name)}</span><span class="attachment-status">${escapeHtml(t(attachment.status === 'ready' ? 'chat__attachmentReady' : attachment.status === 'error' ? 'chat__attachmentError' : 'chat__attachmentParsing'))}</span><button type="button" data-remove-attachment="${attachment.id}" aria-label="${escapeHtml(t('chat__btnRemoveAttachment', attachment.name))}">×</button></div>`).join('');
     tray.querySelectorAll<HTMLButtonElement>('[data-remove-attachment]').forEach((button) => button.addEventListener('click', () => {
       this.attachments = this.attachments.filter((item) => item.id !== button.dataset.removeAttachment);
       this.renderAttachments();
@@ -515,7 +515,7 @@ class ChatWindowApp {
     const reasoning = document.createElement('details');
     reasoning.className = 'message-reasoning';
     reasoning.innerHTML = `
-      <summary class="message-reasoning-title">${escapeHtml(t('chat__reasoningSummary'))}<span aria-hidden="true">⌄</span></summary>
+      <summary class="message-reasoning-title">${escapeHtml(t('chat__reasoningContent'))}<span aria-hidden="true">⌄</span></summary>
       <div class="message-reasoning-body">${escapeHtml(summary).replace(/\n/g, '<br>')}</div>
     `;
     return reasoning;
@@ -556,7 +556,7 @@ class ChatWindowApp {
           <span class="message-tool-entry-status">${escapeHtml(this.getToolStatusLabel(toolCall.status))}</span>
         </div>
         <div class="message-tool-entry-args">${escapeHtml(toolCall.arguments)}</div>
-        <div class="message-tool-entry-output">${escapeHtml(toolCall.output || t('chat__toolWaiting'))}</div>
+        <div class="message-tool-entry-output">${escapeHtml(formatToolDisplay(toolCall))}</div>
       </div>
     `).join('');
   }
@@ -946,7 +946,7 @@ class ChatWindowApp {
         <span class="message-role">${escapeHtml(t('chat__roleAI'))}</span>
       </div>
       <details class="message-reasoning">
-        <summary class="message-reasoning-title">${escapeHtml(t('chat__reasoningSummary'))}<span aria-hidden="true">⌄</span></summary>
+        <summary class="message-reasoning-title">${escapeHtml(t('chat__reasoningContent'))}<span aria-hidden="true">⌄</span></summary>
         <div class="message-reasoning-body"></div>
       </details>
       <details class="message-tools" hidden>

@@ -92,12 +92,11 @@ export function escapeHtml(value: string): string {
 
 export function i18nMessage(
   key: string,
-  substitutions?: string | number | Array<string | number> | Record<string, string | number>
+  substitutions?: string | number | Array<string | number>
 ): string {
-  const normalized = substitutions && typeof substitutions === 'object' && !Array.isArray(substitutions)
-    ? Object.values(substitutions)
-    : substitutions;
-  return chrome.i18n.getMessage(key, normalized as string | Array<string | number>) || key;
+  const values = Array.isArray(substitutions) ? substitutions
+    : substitutions === undefined ? [] : [substitutions];
+  return chrome.i18n.getMessage(key, values.map(String)) || key;
 }
 
 export function createUsageMetrics(partial?: Partial<UsageMetrics> | null): UsageMetrics | null {

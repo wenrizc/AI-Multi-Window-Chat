@@ -173,14 +173,28 @@ function normalizeToolCalls(value: unknown): ToolCallRecord[] {
     const status = item.status === 'completed' || item.status === 'failed' || item.status === 'pending'
       ? item.status
       : 'failed';
+    const display = normalizeToolDisplay(item.display);
     return [{
       id: typeof item.id === 'string' && item.id ? item.id : `tool-${index + 1}`,
       name: item.name,
       status,
       arguments: typeof item.arguments === 'string' ? item.arguments : '',
-      output: typeof item.output === 'string' ? item.output : null
+      output: typeof item.output === 'string' ? item.output : null,
+      ...(display ? { display } : {})
     }];
   });
+}
+
+function normalizeToolDisplay(value: unknown): ToolCallRecord['display'] {
+  if (!isRecord(value)) return undefined;
+  if (value.kind === 'unsupported_tool' || value.kind === 'invalid_query') return { kind: value.kind };
+  if (value.kind === 'search' && typeof value.query === 'string') {
+    return {
+      kind: 'search', query: value.query, sources: normalizeSources(value.sources),
+      credits: typeof value.credits === 'number' && Number.isFinite(value.credits) ? value.credits : null
+    };
+  }
+  return undefined;
 }
 
 function normalizeSources(value: unknown): SearchSource[] {

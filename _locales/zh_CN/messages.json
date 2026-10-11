@@ -44,8 +44,8 @@
     "description": "配置名称标签"
   },
   "popup__labelActiveProfile": {
-    "message": "默认",
-    "description": "当前配置标签"
+    "message": "默认配置",
+    "description": "默认服务配置选择器"
   },
   "popup__btnAddProfile": {
     "message": "新增",
@@ -60,8 +60,8 @@
     "description": "删除配置按钮"
   },
   "popup__btnSetActive": {
-    "message": "设为当前",
-    "description": "设为当前配置按钮"
+    "message": "设为默认",
+    "description": "设为默认服务配置按钮"
   },
   "popup__btnTestConnection": {
     "message": "测试连接",
@@ -84,7 +84,7 @@
     "description": "保存成功消息"
   },
   "popup__statusDeleted": {
-    "message": "记录已删除",
+    "message": "配置已删除",
     "description": "删除成功消息"
   },
   "popup__statusCopied": {
@@ -124,11 +124,11 @@
     "description": "导入失败消息（带占位符）"
   },
   "popup__statusSetActive": {
-    "message": "已设为当前",
-    "description": "设为当前成功消息"
+    "message": "已设为默认配置",
+    "description": "默认服务配置更新消息"
   },
   "popup__confirmDeleteProfile": {
-    "message": "确定要删除 \"$1\" 吗？",
+    "message": "确定要删除配置「$1」吗？",
     "description": "确认删除配置消息（带占位符）"
   },
   "popup__confirmImportReplace": {
@@ -276,7 +276,7 @@
     "description": "引导弹窗保存成功但打开对话失败"
   },
   "onboarding__samplePrompt": {
-    "message": "你好！请给我三个在当前页面使用 AI 多窗口聊天的快速方法。",
+    "message": "你好！请给我三个在当前页面使用 AI 多窗口对话的快速方法。",
     "description": "引导完成后打开的示例提示词"
   },
   "chat__welcome": {
@@ -466,11 +466,11 @@
     "description": "初始化失败消息"
   },
   "chat__statusCreateProviderFirst": {
-    "message": "请先创建一个模型配置。",
+    "message": "请先创建一个服务配置。",
     "description": "提示先创建 provider"
   },
   "chat__statusProviderNotFound": {
-    "message": "未找到模型配置。",
+    "message": "未找到服务配置。",
     "description": "未找到 provider 状态"
   },
   "chat__statusCompleted": {
@@ -597,10 +597,6 @@
     "message": "存储占用：$1（$2%）",
     "description": "存储占用提示"
   },
-  "chat__reasoningSummary": {
-    "message": "推理摘要",
-    "description": "推理摘要标题"
-  },
   "chat__noProvider": {
     "message": "暂无配置",
     "description": "无 provider 选项"
@@ -706,7 +702,7 @@
     "description": "不限时间范围选项"
   },
   "popup__emptyProviders": {
-    "message": "还没有模型配置。",
+    "message": "还没有服务配置。",
     "description": "空 provider 列表消息"
   },
   "prompt__emptyState": {
@@ -839,7 +835,7 @@
     "description": "推理 token 数量标签"
   },
   "website__homeDocumentTitle": {
-    "message": "AI 多窗口聊天",
+    "message": "AI 多窗口对话",
     "description": "网站首页文档标题"
   },
   "website__homeSubtitle": {
@@ -847,7 +843,7 @@
     "description": "网站首页副标题"
   },
   "website__homeIntro": {
-    "message": "AI 多窗口聊天将多窗口 AI 对话、提示词、历史记录和服务配置集中带到任意网页中。",
+    "message": "AI 多窗口对话将多窗口 AI 对话、提示词、历史记录和服务配置集中带到任意网页中。",
     "description": "网站首页介绍"
   },
   "website__featuresTitle": {
@@ -867,8 +863,8 @@
     "description": "网站 OpenAI 兼容特点"
   },
   "website__featureLightweight": {
-    "message": "支持历史、提示词与配置的导入导出",
-    "description": "网站轻量特点"
+    "message": "支持历史导出，以及提示词和配置导入导出",
+    "description": "网站历史导出与提示词、配置导入导出功能说明"
   },
   "website__getStartedTitle": {
     "message": "快速开始",
@@ -891,7 +887,7 @@
     "description": "网站反馈问题链接"
   },
   "website__privacyDocumentTitle": {
-    "message": "隐私政策 - AI 多窗口聊天",
+    "message": "隐私政策 - AI 多窗口对话",
     "description": "网站隐私政策文档标题"
   },
   "website__backHome": {
@@ -903,11 +899,11 @@
     "description": "网站隐私政策标题"
   },
   "website__privacyLastUpdated": {
-    "message": "最后更新：2026年1月14日",
+    "message": "最后更新：2026年10月11日",
     "description": "网站隐私政策最后更新时间"
   },
   "website__privacyIntro": {
-    "message": "AI 多窗口聊天是一款开源浏览器扩展。本隐私政策说明我们如何处理您的数据。",
+    "message": "AI 多窗口对话是一款开源浏览器扩展。本隐私政策说明我们如何处理您的数据。",
     "description": "网站隐私政策简介"
   },
   "website__privacyDataCollectionTitle": {
@@ -935,11 +931,11 @@
     "description": "网站隐私设置条目"
   },
   "website__privacyCollectionReasoning": {
-    "message": "可选的推理摘要、token 使用量和估算费用记录",
+    "message": "可选的推理内容和 token 用量记录",
     "description": "网站隐私推理条目"
   },
   "website__privacyCollectionSearch": {
-    "message": "可选的 Tavily 搜索设置、搜索 query 和来源元数据",
+    "message": "可选的 Tavily 搜索设置、搜索查询和来源元数据",
     "description": "网站隐私搜索条目"
   },
   "website__privacyDataUsageTitle": {
@@ -971,7 +967,7 @@
     "description": "网站隐私搜索条目"
   },
   "website__privacyNoAds": {
-    "message": "我们不会将您的数据用于广告、分析或出售给第三方。",
+    "message": "我们不会将您的数据用于广告或分析，也不会将其出售给第三方。",
     "description": "网站隐私不做广告说明"
   },
   "website__privacyDataStorageTitle": {
@@ -987,7 +983,7 @@
     "description": "网站隐私模型服务存储说明"
   },
   "website__privacyStorageSearch": {
-    "message": "如果您开启联网搜索，搜索 query 和相关上下文还可能发送给 Tavily 以获取搜索结果。",
+    "message": "如果您开启联网搜索，搜索查询和相关上下文还可能发送给 Tavily 以获取搜索结果。",
     "description": "网站隐私搜索存储说明"
   },
   "website__privacyDataSharingTitle": {
@@ -1125,5 +1121,53 @@
   "chat__customEffortsHelp": {
     "message": "仅对当前模型生效。用逗号或换行分隔多个档位，保存模型配置后可在聊天中选择；留空可移除。",
     "description": "chat__customEffortsHelp"
+  },
+  "common__locale": {
+    "message": "zh-CN",
+    "description": "Actual language of this catalog; keep this as a language tag"
+  },
+  "chat__btnRemoveAttachment": {
+    "message": "删除附件：$1",
+    "description": "Accessible attachment removal label with filename"
+  },
+  "popup__errorUnsupportedImport": {
+    "message": "不支持此导入格式，请使用 JSON 或包含 JSON 代码块的 Markdown 文件。",
+    "description": "Unsupported configuration import format"
+  },
+  "popup__errorInvalidImportJson": {
+    "message": "导入文件中的 JSON 格式无效。",
+    "description": "Invalid configuration import JSON"
+  },
+  "history__messageCountOne": {
+    "message": "$1 条消息",
+    "description": "History message count for a single message"
+  },
+  "chat__reasoningContent": {
+    "message": "推理内容",
+    "description": "Panel showing reasoning content or summaries"
+  },
+  "chat__toolUnsupported": {
+    "message": "不支持的工具：$1",
+    "description": "Unsupported tool shown in results panel"
+  },
+  "chat__toolInvalidQuery": {
+    "message": "搜索查询不能为空。",
+    "description": "Invalid search query shown in results panel"
+  },
+  "chat__toolQuery": {
+    "message": "查询：$1",
+    "description": "Search query in results panel"
+  },
+  "chat__toolUrl": {
+    "message": "链接：$1",
+    "description": "Search result URL"
+  },
+  "chat__toolSummary": {
+    "message": "摘要：$1",
+    "description": "Search result snippet"
+  },
+  "chat__toolCredits": {
+    "message": "消耗点数：$1",
+    "description": "Search credits used"
   }
 }

@@ -138,7 +138,8 @@ async function executeToolCall(input: {
     const failedRecord: ToolCallRecord = {
       ...pendingRecord,
       status: 'failed',
-      output: `Unsupported tool: ${input.toolCall.name}`
+      output: `Unsupported tool: ${input.toolCall.name}`,
+      display: { kind: 'unsupported_tool' }
     };
     const nextRecords = upsertToolCallRecord(input.toolCallRecords, failedRecord);
     emit(input.requestId, input.onEvent, {
@@ -161,7 +162,8 @@ async function executeToolCall(input: {
     const failedRecord: ToolCallRecord = {
       ...pendingRecord,
       status: 'failed',
-      output: 'Expected a non-empty query string.'
+      output: 'Expected a non-empty query string.',
+      display: { kind: 'invalid_query' }
     };
     const nextRecords = upsertToolCallRecord(input.toolCallRecords, failedRecord);
     emit(input.requestId, input.onEvent, {
@@ -218,7 +220,8 @@ async function executeToolCall(input: {
   const completedRecord: ToolCallRecord = {
     ...pendingRecord,
     status: 'completed',
-    output
+    output,
+    display: { kind: 'search', query, sources: searchResult.sources, credits: searchResult.searchMeta?.credits ?? null }
   };
   const nextRecords = upsertToolCallRecord(input.toolCallRecords, completedRecord);
   emit(input.requestId, input.onEvent, {

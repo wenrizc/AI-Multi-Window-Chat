@@ -65,6 +65,9 @@ describe.each<Transport>(['chat_completions', 'responses'])('%s search orchestra
     expect(result).toMatchObject({ content: 'Weather compared.', usage: { inputTokens: 9, outputTokens: 6, totalTokens: 15 }, searchMeta: { queries, credits: 3, sourceCount: 3 } });
     expect(result.toolCalls.map(item => [item.id, item.status])).toEqual([['a', 'completed'], ['b', 'completed'], ['c', 'completed']]);
     expect(result.sources).toHaveLength(3);
+    expect(result.toolCalls[0].display).toEqual({
+      kind: 'search', query: 'Beijing', credits: 1, sources: [result.sources[0]]
+    });
     expect(events.every(event => event.requestId === 'search-session')).toBe(true);
     expect(events.filter(event => event.type === 'sourceUpdate').map(event => event.sources.length)).toEqual([1, 2, 3]);
     if (transport === 'responses') {
@@ -96,7 +99,10 @@ describe.each<Transport>(['chat_completions', 'responses'])('%s search orchestra
       () => llmTurn(transport, { content: 'Recovered.' })
     ]);
     const result = await run(transport);
-    expect(result.toolCalls).toEqual([{ ...tool, status: 'failed', output: error }]);
+    expect(result.toolCalls).toEqual([{
+      ...tool, status: 'failed', output: error,
+      display: { kind: tool.name === 'web_search' ? 'invalid_query' : 'unsupported_tool' }
+    }]);
     expect(result.sources).toEqual([]);
     const body = script.requests[1].body;
     const outputs = (transport === 'responses' ? body.input : body.messages) as Record<string, unknown>[];

@@ -218,7 +218,7 @@ describe('background chat streaming', () => {
 
     const failed = await waitForEvent(port, (event) => event.type === 'failed');
     if (failed.type === 'failed') {
-      expect(failed.error).toBe('Provider not found.');
+      expect(failed.error).toBe('Provider configuration not found.');
       expect(failed.code).toBe('provider_not_found');
       expect(failed.retryable).toBe(false);
     }

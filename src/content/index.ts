@@ -80,6 +80,7 @@ class AIMultiWindow {
   private createToolbar(): HTMLElement {
     const toolbar = document.createElement('div');
     toolbar.className = 'ai-selection-toolbar';
+    toolbar.lang = t('common__locale');
     toolbar.innerHTML = `
       <button class="ai-toolbar-btn" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -188,7 +189,7 @@ class AIMultiWindow {
   }
 
   private createDefaultWindowTitle() {
-    const title = t('content__aiChatTitle', { number: String(this.nextFreshWindowNumber) });
+    const title = t('content__aiChatTitle', this.nextFreshWindowNumber);
     this.nextFreshWindowNumber += 1;
     return title;
   }
@@ -307,6 +308,7 @@ class AIMultiWindow {
     chatUrl.searchParams.set('parentOrigin', window.location.origin);
     const wrapper = document.createElement('div');
     wrapper.className = 'ai-multi-window';
+    wrapper.lang = t('common__locale');
     wrapper.id = windowId;
     wrapper.style.width = `${AIMultiWindow.DEFAULT_WINDOW_WIDTH}px`;
     wrapper.style.height = `${AIMultiWindow.DEFAULT_WINDOW_HEIGHT}px`;

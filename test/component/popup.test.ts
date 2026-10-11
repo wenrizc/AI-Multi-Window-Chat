@@ -153,7 +153,7 @@ describe('popup providers', () => {
     await waitFor(() => storedStore().providers.length === 2);
 
     expect(document.querySelectorAll('#profileList .profile-item').length).toBe(2);
-    expect(storedStore().providers[0].name).toBe('Profile 2');
+    expect(storedStore().providers[0].name).toBe('Configuration 2');
   });
 
   it('saves provider edits to storage', async () => {

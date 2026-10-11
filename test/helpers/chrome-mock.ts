@@ -78,10 +78,11 @@ export type ChromeMockState = {
 };
 
 function substitute(message: string, substitutions: Array<string | number>): string {
-  return message.replace(/\$(\d+)/g, (_match, index: string) => {
+  return message.replace(/\$\$|\$(\d+)/g, (token, index: string) => {
+    if (token === '$$') return '$';
     const value = substitutions[Number(index) - 1];
     return value === undefined ? '' : String(value);
-  }).replace(/\$\$/g, '$');
+  });
 }
 
 /** Approximate serialized size of a set of storage entries. */
@@ -119,14 +120,13 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
         ? []
         : [substitutions];
 
-    let template = entry.message;
-    if (entry.placeholders) {
-      for (const [name, definition] of Object.entries(entry.placeholders)) {
-        const content = substitute(definition.content, values);
-        template = template.split(`$${name}$`).join(content);
-      }
-    }
-    return substitute(template, values);
+    const placeholders = Object.fromEntries(Object.entries(entry.placeholders ?? {})
+      .map(([name, definition]) => [name.toLowerCase(), definition.content]));
+    return entry.message.replace(/\$\$|\$([a-z_][\w]*)\$|\$(\d+)/gi, (token, name: string, index: string) => {
+      if (token === '$$') return '$';
+      if (name) return substitute(placeholders[name.toLowerCase()] ?? '', values);
+      return String(values[Number(index) - 1] ?? '');
+    });
   }
 
   function createPort(name: string): PortMock {

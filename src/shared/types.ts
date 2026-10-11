@@ -112,6 +112,10 @@ export interface ToolCallRecord {
   status: 'pending' | 'completed' | 'failed';
   arguments: string;
   output: string | null;
+  /** UI metadata; output remains the stable text returned to the model. */
+  display?:
+    | { kind: 'search'; query: string; sources: SearchSource[]; credits: number | null }
+    | { kind: 'unsupported_tool' | 'invalid_query' };
 }
 
 export type PromptSnapshot = Pick<PromptConfig, 'id' | 'name' | 'content'>;
