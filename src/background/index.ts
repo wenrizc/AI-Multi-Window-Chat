@@ -58,6 +58,7 @@ function createPersistedMessage(input: {
   providerId: string | null;
   modelId: string | null;
   promptId: string | null;
+  promptSnapshot?: ChatRequest['promptSnapshot'];
   attachments?: PersistedMessage['attachments'];
   reasoningSummary?: string | null;
   toolCalls?: PersistedMessage['toolCalls'];
@@ -79,6 +80,7 @@ function createPersistedMessage(input: {
     providerId: input.providerId,
     modelId: input.modelId,
     promptId: input.promptId,
+    ...(input.promptSnapshot !== undefined ? { promptSnapshot: input.promptSnapshot } : {}),
     searchMeta: input.searchMeta ?? null,
     createdAt: nowIso()
   };
@@ -135,6 +137,7 @@ async function persistConversation(input: {
       providerId: input.request.providerId,
       modelId: input.request.modelId,
       promptId: input.request.promptId,
+      promptSnapshot: input.request.promptSnapshot,
       attachments: input.request.attachments
     })];
   }
@@ -148,6 +151,7 @@ async function persistConversation(input: {
     providerId: input.request.providerId,
     modelId: input.request.modelId,
     promptId: input.request.promptId,
+    promptSnapshot: input.request.promptSnapshot,
     attachments: [],
     reasoningSummary: input.reasoningSummary,
     toolCalls: input.toolCalls,
@@ -207,6 +211,7 @@ async function persistUserMessage(request: ChatRequest) {
     providerId: request.providerId,
     modelId: request.modelId,
     promptId: request.promptId,
+    promptSnapshot: request.promptSnapshot,
     attachments: request.attachments
   });
 

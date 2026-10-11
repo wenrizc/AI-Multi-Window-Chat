@@ -505,6 +505,10 @@
     "message": "Current prompt is unavailable.",
     "description": "Warning shown when the selected prompt cannot be found"
   },
+  "chat__statusPromptSaveFailed": {
+    "message": "Could not save the prompt selection. It applies to this window only.",
+    "description": "Prompt selection persistence failed without interrupting the current reply"
+  },
   "chat__statusConfigureTavilyFirst": {
     "message": "Please configure Tavily API key first.",
     "description": "Missing Tavily key status"

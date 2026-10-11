@@ -505,6 +505,10 @@
     "message": "当前提示词不可用。",
     "description": "当前提示词不存在时的提示"
   },
+  "chat__statusPromptSaveFailed": {
+    "message": "提示词选择保存失败，仅在当前窗口生效。",
+    "description": "保存提示词选择失败时提示，不中断正在生成的回复"
+  },
   "chat__statusConfigureTavilyFirst": {
     "message": "请先配置 Tavily API Key。",
     "description": "缺少 Tavily key 状态"

@@ -263,6 +263,10 @@ function normalizeMessage(value: unknown, index: number): PersistedMessage | nul
     providerId: typeof value.providerId === 'string' ? value.providerId : null,
     modelId: typeof value.modelId === 'string' ? value.modelId : null,
     promptId: typeof value.promptId === 'string' ? value.promptId : null,
+    ...(value.promptSnapshot === null ? { promptSnapshot: null } :
+      isRecord(value.promptSnapshot) && typeof value.promptSnapshot.id === 'string'
+      && typeof value.promptSnapshot.name === 'string' && typeof value.promptSnapshot.content === 'string'
+        ? { promptSnapshot: { id: value.promptSnapshot.id, name: value.promptSnapshot.name, content: value.promptSnapshot.content } } : {}),
     searchMeta: normalizeSearchMeta(value.searchMeta),
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : nowIso()
   };
@@ -549,18 +553,19 @@ async function performUpsertSession(session: ChatSession): Promise<ChatSession> 
 async function performDeleteSession(chatId: string): Promise<void> {
   const index = (await readV5Index()).filter((entry) => entry.chatId !== chatId);
   await write({ [CHAT_INDEX_KEY]: index });
-  await chrome.storage.local.remove(chatSessionKey(chatId));
+  await chrome.storage.local.remove([chatSessionKey(chatId), CHAT_PROMPT_SELECTION_PREFIX + chatId]);
 }
 
 async function performClearSessions(): Promise<void> {
   const all = await chrome.storage.local.get(null);
   const keys = Object.keys(all).filter(
-    (key) => key.startsWith(CHAT_SESSION_PREFIX) && key !== CHAT_INDEX_KEY
+    (key) => (key.startsWith(CHAT_SESSION_PREFIX) && key !== CHAT_INDEX_KEY)
+      || key.startsWith(CHAT_PROMPT_SELECTION_PREFIX)
   );
+  await write({ [CHAT_INDEX_KEY]: [] });
   if (keys.length) {
     await chrome.storage.local.remove(keys);
   }
-  await write({ [CHAT_INDEX_KEY]: [] });
 }
 
 async function performSaveAll(sessions: ChatSession[]): Promise<void> {
@@ -572,15 +577,16 @@ async function performSaveAll(sessions: ChatSession[]): Promise<void> {
 
   const all = await chrome.storage.local.get(null);
   const stale = Object.keys(all).filter(
-    (key) => key.startsWith(CHAT_SESSION_PREFIX) && key !== CHAT_INDEX_KEY && !(key in writes)
+    (key) => (key.startsWith(CHAT_SESSION_PREFIX) && key !== CHAT_INDEX_KEY && !(key in writes))
+      || key.startsWith(CHAT_PROMPT_SELECTION_PREFIX)
   );
-  if (stale.length) {
-    await chrome.storage.local.remove(stale);
-  }
   if (Object.keys(writes).length) {
     await write(writes);
   }
   await write({ [CHAT_INDEX_KEY]: index });
+  if (stale.length) {
+    await chrome.storage.local.remove(stale);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -609,6 +615,34 @@ async function writeV4Store(store: RootStore): Promise<void> {
 /* Public facade                                                       */
 /* ------------------------------------------------------------------ */
 
+export const CHAT_PROMPT_SELECTION_PREFIX = 'ui_chat_prompt_v1_';
+
+export async function getChatPromptSelection(chatId: string): Promise<string | null | undefined> {
+  const key = CHAT_PROMPT_SELECTION_PREFIX + chatId;
+  const value = (await chrome.storage.local.get(key))[key];
+  return value === null || typeof value === 'string' ? value : undefined;
+}
+
+// Stored separately so completing an older request cannot undo a newer selection.
+export async function saveChatPromptSelection(chatId: string, promptId: string | null): Promise<void> {
+  await enqueue(() => write({ [CHAT_PROMPT_SELECTION_PREFIX + chatId]: promptId }));
+}
+
+async function withPromptSelections(sessions: ChatSession[]): Promise<ChatSession[]> {
+  if (!sessions.length) return sessions;
+  const selections = await chrome.storage.local.get(sessions.map(session => CHAT_PROMPT_SELECTION_PREFIX + session.chatId));
+  return sessions.map(session => {
+    const selection = selections[CHAT_PROMPT_SELECTION_PREFIX + session.chatId];
+    return selection === null || typeof selection === 'string' ? { ...session, promptId: selection } : session;
+  });
+}
+
+async function clearPromptSelections(): Promise<void> {
+  const all = await chrome.storage.local.get(null);
+  const keys = Object.keys(all).filter(key => key.startsWith(CHAT_PROMPT_SELECTION_PREFIX));
+  if (keys.length) await chrome.storage.local.remove(keys);
+}
+
 export async function getConfig(): Promise<StorageConfig> {
   return (await getStorageMode()) === 'v5' ? readV5Config() : (await readV4Store());
 }
@@ -629,10 +663,12 @@ export async function saveConfig(config: StorageConfig): Promise<StorageConfig> 
 
 export async function getChatSession(chatId: string): Promise<ChatSession | null> {
   if ((await getStorageMode()) === 'v5') {
-    return readV5Session(chatId);
+    const session = await readV5Session(chatId);
+    return session ? (await withPromptSelections([session]))[0] : null;
   }
   const store = await readV4Store();
-  return store.chatHistory.find((session) => session.chatId === chatId) ?? null;
+  const session = store.chatHistory.find((session) => session.chatId === chatId);
+  return session ? (await withPromptSelections([session]))[0] : null;
 }
 
 export async function upsertChatSession(session: ChatSession): Promise<ChatSession> {
@@ -698,6 +734,7 @@ export async function deleteChatSession(chatId: string): Promise<void> {
     const store = await readV4Store();
     store.chatHistory = store.chatHistory.filter((session) => session.chatId !== chatId);
     await writeV4Store(store);
+    await chrome.storage.local.remove(CHAT_PROMPT_SELECTION_PREFIX + chatId);
   });
 }
 
@@ -709,6 +746,7 @@ export async function clearChatSessions(): Promise<void> {
     const store = await readV4Store();
     store.chatHistory = [];
     await writeV4Store(store);
+    await clearPromptSelections();
   });
 }
 
@@ -735,9 +773,9 @@ export async function getAllChatSessions(): Promise<ChatSession[]> {
         sessions.push(session);
       }
     }
-    return sessions;
+    return withPromptSelections(sessions);
   }
-  return (await readV4Store()).chatHistory;
+  return withPromptSelections((await readV4Store()).chatHistory);
 }
 
 export async function getStore(): Promise<RootStore> {
@@ -745,7 +783,8 @@ export async function getStore(): Promise<RootStore> {
     const config = await readV5Config();
     return { ...config, chatHistory: await getAllChatSessions() };
   }
-  return readV4Store();
+  const store = await readV4Store();
+  return { ...store, chatHistory: await withPromptSelections(store.chatHistory) };
 }
 
 /** Backwards-compatible alias used across the codebase. */
@@ -756,7 +795,10 @@ export async function ensureStore(): Promise<RootStore> {
 /** Full-store write; only used by tests and one-off migrations. */
 export async function saveStore(store: RootStore): Promise<void> {
   if ((await getStorageMode()) !== 'v5') {
-    await enqueue(() => writeV4Store(store));
+    await enqueue(async () => {
+      await writeV4Store(store);
+      await clearPromptSelections();
+    });
     return;
   }
   await saveConfig(store);

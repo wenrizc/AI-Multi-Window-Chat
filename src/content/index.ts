@@ -403,7 +403,7 @@ class AIMultiWindow {
           chatId,
           windowTitle: this.windowTitles.get(windowId),
           profileId: chat?.providerId ?? null,
-          promptId: chat?.promptId ?? null,
+          ...(chat ? { promptId: chat.promptId } : {}),
           streamingOverride: chat?.streamingOverride ?? null,
           historyMessages: chat?.messages ?? null,
           activeLeafId: chat?.activeLeafId ?? null,

@@ -1,6 +1,6 @@
 import { PORT_NAME, META_KEY, LEGACY_STORAGE_KEY } from '../shared/constants';
 import { normalizeCustomReasoningEfforts } from '../shared/reasoning';
-import { getConfig, upsertChatSession } from '../shared/storage';
+import { getConfig, getChatPromptSelection, saveChatPromptSelection, upsertChatSession } from '../shared/storage';
 import { findLatestLeafUnder, getSiblingInfo, resolveActivePath } from '../shared/conversation-tree';
 import type { FailureCode } from '../shared/errors';
 import type {
@@ -117,6 +117,9 @@ class ChatWindowApp {
   private windowTitle = '';
   private profileId: string | null = null;
   private promptId: string | null = null;
+  private promptInitialized = false;
+  private promptSelectionVersion = 0;
+  private promptRestore: Promise<void> = Promise.resolve();
   private messages: PersistedMessage[] = [];
   private providers: ProviderConfig[] = [];
   private prompts: PromptConfig[] = [];
@@ -164,6 +167,7 @@ class ChatWindowApp {
   private currentAssistantMessageId: string | null = null;
   private currentProviderId: string | null = null;
   private currentPromptId: string | null = null;
+  private currentPromptSnapshot: ChatRequest['promptSnapshot'] = null;
   private currentPurpose: MessagePurpose = 'send';
   private previousActiveLeafId: string | null = null;
 
@@ -239,8 +243,9 @@ class ChatWindowApp {
     if (!this.profileId) {
       this.profileId = config.featureSettings.defaultProviderId;
     }
-    if (!this.promptId) {
+    if (!this.promptInitialized) {
       this.promptId = config.featureSettings.defaultPromptId;
+      this.promptInitialized = true;
     }
 
     this.elements.searchToggle.checked = config.featureSettings.search.enabledByDefault;
@@ -308,7 +313,18 @@ class ChatWindowApp {
     this.chatId = payload.chatId || this.chatId;
     this.windowTitle = payload.windowTitle || this.windowTitle;
     this.profileId = payload.profileId || this.profileId;
-    this.promptId = payload.promptId || this.promptId;
+    if ('promptId' in payload) {
+      this.promptId = payload.promptId ?? null;
+      this.promptInitialized = true;
+    }
+    const version = ++this.promptSelectionVersion;
+    const chatId = this.chatId;
+    this.promptRestore = getChatPromptSelection(chatId).then(selection => {
+      if (version !== this.promptSelectionVersion || chatId !== this.chatId || selection === undefined) return;
+      this.promptId = selection;
+      this.promptInitialized = true;
+      this.renderSelectors();
+    }).catch(error => this.reportAsyncFailure(error));
     if ('streamingOverride' in payload) {
       this.streamingOverride = payload.streamingOverride ?? null;
     }
@@ -396,7 +412,14 @@ class ChatWindowApp {
     });
     this.elements.promptSelect.addEventListener('change', () => {
       this.promptId = this.elements.promptSelect.value || null;
-      if (!this.promptId || this.prompts.some((prompt) => prompt.id === this.promptId)) {
+      this.promptInitialized = true;
+      this.promptSelectionVersion++;
+      void saveChatPromptSelection(this.chatId, this.promptId).catch(error => {
+        console.error(error);
+        this.setLocalizedComposerStatus('chat__statusPromptSaveFailed', 'error');
+      });
+      if (!this.isLoading && this.elements.composerRetryBtn.hidden
+        && (!this.promptId || this.prompts.some((prompt) => prompt.id === this.promptId))) {
         this.clearComposerStatus();
       }
       this.renderSessionContext();
@@ -676,15 +699,15 @@ class ChatWindowApp {
 
     this.elements.promptSelect.innerHTML = [
       `<option value="">${escapeHtml(t('prompt__noPrompt'))}</option>`,
-      ...this.prompts.map((prompt) => `<option value="${prompt.id}">${escapeHtml(prompt.name)}</option>`)
+      ...(this.promptId && !this.prompts.some(prompt => prompt.id === this.promptId)
+        ? [`<option value="${escapeHtml(this.promptId)}">${escapeHtml(t('chat__statusPromptUnavailable'))}</option>`] : []),
+      ...this.prompts.map((prompt) => `<option value="${escapeHtml(prompt.id)}">${escapeHtml(prompt.name)}</option>`)
     ].join('');
 
     if (this.profileId) {
       this.elements.profileSelect.value = this.profileId;
     }
-    if (this.promptId) {
-      this.elements.promptSelect.value = this.promptId;
-    }
+    this.elements.promptSelect.value = this.promptId ?? '';
     this.syncStreamingControl();
     this.renderSessionContext();
   }
@@ -963,6 +986,7 @@ class ChatWindowApp {
   }
 
   private async sendMessage() {
+    await this.promptRestore;
     const content = this.elements.messageInput.value.trim();
     if ((!content && this.attachments.length === 0) || this.isLoading || this.requestPreparationInFlight) {
       return;
@@ -990,12 +1014,8 @@ class ChatWindowApp {
         return;
       }
 
-      const prompt = this.prompts.find((item) => item.id === this.promptId) ?? null;
-      if (this.promptId && !prompt) {
-        this.setLocalizedComposerStatus('chat__statusPromptUnavailable', 'warning');
-        return;
-      }
-
+      const prompt = this.resolvePrompt(this.promptId);
+      if (prompt === undefined) return;
       if (this.elements.searchToggle.checked && !this.featureSettings?.search.tavilyApiKey.trim()) {
         this.setLocalizedComposerStatus('chat__statusConfigureTavilyFirst', 'warning');
         return;
@@ -1068,6 +1088,14 @@ class ChatWindowApp {
     this.currentAssistantMessageId = uid('msg');
     this.currentProviderId = params.provider.id;
     this.currentPromptId = params.prompt?.id ?? null;
+    this.currentPromptSnapshot = params.prompt ? { id: params.prompt.id, name: params.prompt.name, content: params.prompt.content } : null;
+    if (params.appendUserMessage) {
+      const userMessage = this.messages.find(message => message.id === params.userMessageId);
+      if (userMessage) {
+        userMessage.promptId = this.currentPromptId;
+        userMessage.promptSnapshot = this.currentPromptSnapshot;
+      }
+    }
     this.currentPurpose = params.purpose;
     this.currentMode = params.mode;
     this.currentModelId = params.model.modelId;
@@ -1096,12 +1124,13 @@ class ChatWindowApp {
       providerId: params.provider.id,
       modelId: params.model.modelId,
       promptId: params.prompt?.id ?? null,
+      promptSnapshot: this.currentPromptSnapshot,
       streamingOverride: this.streamingOverride,
       userMessage: params.userMessage,
       mode: params.mode,
       messages: [
         ...(params.prompt?.content ? [{ role: 'system' as const, content: params.prompt.content }] : []),
-        ...path.map((message): ChatRequest['messages'][number] => ({
+        ...path.filter(message => message.role !== 'system').map((message): ChatRequest['messages'][number] => ({
           role: message.role,
           content: message.role === 'user' && message.attachments?.length
             ? [
@@ -1134,6 +1163,7 @@ class ChatWindowApp {
       providerId: request.providerId,
       modelId: request.modelId,
       promptId: request.promptId,
+      promptSnapshot: request.promptSnapshot,
       streamingOverride: request.streamingOverride,
       userMessage: request.userMessage,
       mode: request.mode,
@@ -1291,11 +1321,14 @@ class ChatWindowApp {
 
   /** Forks the conversation by replacing `target` with an edited sibling turn. */
   private async applyEdit(target: PersistedMessage, newContent: string) {
+    await this.promptRestore;
     if (this.isLoading || this.requestPreparationInFlight) {
       return;
     }
     this.requestPreparationInFlight = true;
     try {
+      const prompt = this.resolvePrompt(this.promptId);
+      if (prompt === undefined) return;
       const provider = this.providers.find((item) => item.id === this.profileId);
       if (!provider) {
         this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
@@ -1320,7 +1353,7 @@ class ChatWindowApp {
 
       this.postChatRequest({
         provider,
-        prompt: this.resolvePrompt(target.promptId ?? this.promptId),
+        prompt,
         model,
         mode: target.mode,
         userMessage: newContent,
@@ -1337,11 +1370,14 @@ class ChatWindowApp {
 
   /** Regenerates an assistant message using the selected provider. */
   private async regenerateMessage(target: PersistedMessage) {
+    await this.promptRestore;
     if (this.isLoading || this.requestPreparationInFlight || target.role !== 'assistant') {
       return;
     }
     this.requestPreparationInFlight = true;
     try {
+      const prompt = this.resolvePrompt(this.promptId);
+      if (prompt === undefined) return;
       const provider = this.providers.find((item) => item.id === this.profileId);
       if (!provider) {
         this.setLocalizedComposerStatus('chat__statusProviderNotFound', 'warning');
@@ -1375,7 +1411,7 @@ class ChatWindowApp {
 
       this.postChatRequest({
         provider,
-        prompt: this.resolvePrompt(target.promptId ?? this.promptId),
+        prompt,
         model,
         mode: target.mode,
         userMessage: userMessage.content,
@@ -1390,8 +1426,13 @@ class ChatWindowApp {
     }
   }
 
-  private resolvePrompt(promptId: string | null): PromptConfig | null {
-    return promptId ? this.prompts.find((item) => item.id === promptId) ?? null : null;
+  private resolvePrompt(promptId: string | null): PromptConfig | null | undefined {
+    const prompt = promptId ? this.prompts.find((item) => item.id === promptId) : null;
+    if (promptId && !prompt) {
+      this.setLocalizedComposerStatus('chat__statusPromptUnavailable', 'error');
+      return undefined;
+    }
+    return prompt ? { ...prompt } : null;
   }
 
   /** Switches between sibling versions and shows the newest leaf under it. */
@@ -1557,6 +1598,7 @@ class ChatWindowApp {
       providerId: this.currentProviderId ?? this.profileId,
       modelId: this.currentModelId,
       promptId: this.currentPromptId,
+      promptSnapshot: this.currentPromptSnapshot,
       searchMeta: response.searchMeta,
       createdAt: nowIso()
     };
@@ -1585,6 +1627,7 @@ class ChatWindowApp {
     this.currentAssistantMessageId = null;
     this.currentProviderId = null;
     this.currentPromptId = null;
+    this.currentPromptSnapshot = null;
     this.currentPurpose = 'send';
     this.showLoading(false);
   }
@@ -1667,6 +1710,7 @@ class ChatWindowApp {
     this.currentAssistantMessageId = template.assistantMessageId ?? uid('msg');
     this.currentProviderId = template.providerId;
     this.currentPromptId = template.promptId ?? null;
+    this.currentPromptSnapshot = template.promptSnapshot ?? null;
     this.currentPurpose = template.purpose ?? 'send';
     this.currentModelId = template.modelId;
     this.currentAssistantState = this.createAssistantPlaceholder();

@@ -15,12 +15,14 @@ import {
   ensureStore,
   getAllChatSessions,
   getChatSession,
+  getChatPromptSelection,
   getConfig,
   getStorageUsage,
   getStore,
   listChatSummaries,
   normalizeSession,
   saveConfig,
+  saveChatPromptSelection,
   saveStore,
   updateChatSession,
   updateStore,
@@ -31,6 +33,67 @@ import { getChromeState } from '../helpers/chrome-mock';
 import { createChatSession, createModel, createPersistedMessage, createProvider } from '../helpers/factories';
 
 type State = ReturnType<typeof getChromeState>;
+
+describe('prompt selection and snapshots', () => {
+  it('keeps the latest selection in history and export after an older request finishes', async () => {
+    const session = createChatSession({ promptId: 'pa' });
+    await upsertChatSession(session);
+    await saveChatPromptSelection(session.chatId, 'pb');
+    await upsertChatSession({ ...session, updatedAt: '2026-10-11T00:00:00Z' });
+    expect((await getChatSession(session.chatId))?.promptId).toBe('pb');
+    expect((await getStore()).chatHistory[0].promptId).toBe('pb');
+    await saveChatPromptSelection(session.chatId, null);
+    expect((await getAllChatSessions())[0].promptId).toBeNull();
+  });
+  it('preserves the distinction between unset and no prompt and cleans up saved selections', async () => {
+    expect(await getChatPromptSelection('empty')).toBeUndefined();
+    await saveChatPromptSelection('empty', null);
+    expect(await getChatPromptSelection('empty')).toBeNull();
+    await saveChatPromptSelection('other', 'pb');
+    await deleteChatSession('empty');
+    expect(await getChatPromptSelection('empty')).toBeUndefined();
+    expect(await getChatPromptSelection('other')).toBe('pb');
+    await clearChatSessions();
+    expect(await getChatPromptSelection('other')).toBeUndefined();
+  });
+  it('retains prompt content snapshots through save and read, including explicit no prompt', async () => {
+    const snapshot = { id: 'pa', name: 'A', content: 'Original instruction' };
+    await upsertChatSession(createChatSession({ messages: [
+      createPersistedMessage({ id: 'one', promptId: 'pa', promptSnapshot: snapshot }),
+      createPersistedMessage({ id: 'two', promptId: null, promptSnapshot: null }),
+      createPersistedMessage({ id: 'legacy' })
+    ] }));
+    const session = await getChatSession('chat-test');
+    expect(session?.messages[0].promptSnapshot).toEqual(snapshot);
+    expect(session?.messages[1].promptSnapshot).toBeNull();
+    expect(session?.messages[2].promptSnapshot).toBeUndefined();
+  });
+  it('retains the saved selection if deleting the session fails', async () => {
+    const session = createChatSession({ promptId: 'pa' });
+    await upsertChatSession(session);
+    await saveChatPromptSelection(session.chatId, 'pb');
+    getChromeState().failNextSetForKey(CHAT_INDEX_KEY);
+    await expect(deleteChatSession(session.chatId)).rejects.toThrow();
+    expect((await getChatSession(session.chatId))?.promptId).toBe('pb');
+  });
+  it('replaces old prompt selections when the full store is replaced', async () => {
+    await upsertChatSession(createChatSession({ chatId: 'kept', promptId: 'pa' }));
+    await saveChatPromptSelection('kept', 'pb');
+    await saveChatPromptSelection('removed', 'pb');
+    await saveStore({ ...createEmptyStore(), chatHistory: [createChatSession({ chatId: 'kept', promptId: null })] });
+    expect((await getChatSession('kept'))?.promptId).toBeNull();
+    expect(await getChatPromptSelection('removed')).toBeUndefined();
+  });
+  it('keeps sessions and selections when clearing the index fails', async () => {
+    const session = createChatSession({ promptId: 'pa' });
+    await upsertChatSession(session);
+    await saveChatPromptSelection(session.chatId, null);
+    getChromeState().failNextSetForKey(CHAT_INDEX_KEY);
+    await expect(clearChatSessions()).rejects.toThrow();
+    expect((await getChatSession(session.chatId))?.promptId).toBeNull();
+    expect((await getAllChatSessions())).toHaveLength(1);
+  });
+});
 
 function readMeta(state: State): StorageConfig {
   return state.storage[META_KEY] as StorageConfig;

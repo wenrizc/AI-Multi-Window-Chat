@@ -98,6 +98,24 @@ beforeEach(() => {
 });
 
 describe('background chat streaming', () => {
+  it('persists the actual request prompt snapshot even when the preset has changed', async () => {
+    seedStore({ providers: [createProvider()], prompts: [{
+      id: 'pa', name: 'Changed', content: 'New instructions', createdAt: '', updatedAt: ''
+    }] });
+    server.use(http.post(`${TEST_BASE_URL}/chat/completions`, async ({ request }) => {
+      const body = await request.json() as { messages: Array<{ role: string; content: string }> };
+      expect(body.messages[0]).toEqual({ role: 'system', content: 'Original instructions' });
+      return HttpResponse.json({ choices: [{ message: { content: 'answer' } }] });
+    }));
+    const snapshot = { id: 'pa', name: 'Original', content: 'Original instructions' };
+    const port = connect();
+    port.emit({ type: 'start_chat', payload: createChatRequest({
+      promptId: 'pa', promptSnapshot: snapshot,
+      messages: [{ role: 'system', content: snapshot.content }, { role: 'user', content: 'hello' }]
+    }) });
+    await waitForEvent(port, event => event.type === 'completed');
+    expect(currentStore().chatHistory[0].messages.map(message => message.promptSnapshot)).toEqual([snapshot, snapshot]);
+  });
   it.each(['chat_completions', 'responses'] as const)('sends and persists images exactly once with %s', async (transport) => {
     seedStore({ providers: [createProvider({ transport })] });
     const attachment = { id: 'image-1', name: 'photo.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,YQ==', status: 'ready' as const };

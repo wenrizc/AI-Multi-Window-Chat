@@ -114,6 +114,8 @@ export interface ToolCallRecord {
   output: string | null;
 }
 
+export type PromptSnapshot = Pick<PromptConfig, 'id' | 'name' | 'content'>;
+
 export interface PersistedMessage {
   id: string;
   role: ChatRole;
@@ -137,6 +139,8 @@ export interface PersistedMessage {
   providerId: string | null;
   modelId: string | null;
   promptId: string | null;
+  /** undefined for legacy messages; null means explicitly no prompt. */
+  promptSnapshot?: PromptSnapshot | null;
   searchMeta: SearchMeta | null;
   createdAt: string;
 }
@@ -244,6 +248,7 @@ export interface ChatRequest {
   providerId: string;
   modelId: string;
   promptId: string | null;
+  promptSnapshot?: PromptSnapshot | null;
   streamingOverride: boolean | null;
   userMessage: string;
   mode: ChatMode;

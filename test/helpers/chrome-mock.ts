@@ -53,6 +53,7 @@ export type ChromeMockState = {
   reset: () => void;
   /** Seed `chrome.storage.local` (e.g. with a `RootStore`). */
   seedStorage: (items: Record<string, unknown>) => void;
+  emitStorageChange: (changes: Record<string, chrome.storage.StorageChange>) => void;
   /** Replace the `runtime.sendMessage` response handler. */
   setRuntimeMessageHandler: (handler: (message: unknown) => unknown) => void;
   /** Remove all runtime/onConnect listeners (useful between re-imports). */
@@ -96,6 +97,7 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
   const messages = options.messages ?? {};
 
   let storage: Record<string, unknown> = {};
+  let storageListeners: Array<(changes: Record<string, chrome.storage.StorageChange>, area: string) => void> = [];
   let storageLimitBytes: number | null = null;
   let failNextSetKey: string | null = null;
   let ports: PortMock[] = [];
@@ -191,6 +193,10 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
       }
     },
     storage: {
+      onChanged: {
+        addListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => { storageListeners.push(listener); },
+        removeListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, area: string) => void) => { storageListeners = storageListeners.filter(item => item !== listener); }
+      },
       local: {
         get: async (keys?: unknown) => {
           if (keys === undefined || keys === null) {
@@ -329,6 +335,7 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
       return tabMessages;
     },
     reset: () => {
+      storageListeners = [];
       storage = {};
       storageLimitBytes = null;
       failNextSetKey = null;
@@ -344,6 +351,9 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
     },
     seedStorage: (items) => {
       storage = { ...storage, ...items };
+    },
+    emitStorageChange: (changes) => {
+      for (const listener of [...storageListeners]) listener(changes, 'local');
     },
     setRuntimeMessageHandler: (handler) => {
       runtimeMessageHandler = handler;

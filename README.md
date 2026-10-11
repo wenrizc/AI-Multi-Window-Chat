@@ -73,6 +73,8 @@ Install directly from the Chrome Web Store:
 - Click the window title to rename it.
 - Open the **History** tab to reopen, export, or delete chats, and export history as Markdown or JSON.
 - Use the **Prompts** tab to manage custom system prompts for your conversations.
+- Prompt switches are saved immediately. Sending, editing, and regenerating use the current selection, including explicit no prompt; in-flight replies and retries retain the original request prompt. Switching preserves conversation history and the influence of earlier replies.
+- New messages save the actual prompt name and content as a snapshot. Older messages cannot recover prompt content that was never recorded.
 - Use the **Config** tab to manage multiple API configurations, reasoning format, streaming, and context window limits.
 
 ## Development

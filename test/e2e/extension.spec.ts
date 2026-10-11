@@ -94,6 +94,59 @@ test.afterAll(async () => {
   await mock?.stop();
 });
 
+test('restores prompt switches and no-prompt sessions in the packaged extension', async () => {
+  let page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html?view=settings`);
+  await expect(page.locator('#profileName')).toHaveValue('Aimock');
+  const original = await serviceWorker.evaluate(async () => (await chrome.storage.local.get('app_meta_v5')).app_meta_v5 as StorageConfig);
+  const config = structuredClone(original);
+  config.prompts = [
+    { id: 'pa', name: 'A', content: 'Instruction A', createdAt: '', updatedAt: '' },
+    { id: 'pb', name: 'B', content: 'Instruction B', createdAt: '', updatedAt: '' }
+  ];
+  config.featureSettings.defaultPromptId = 'pa';
+  await serviceWorker.evaluate(async config => chrome.storage.local.set({ app_meta_v5: config }), config);
+  try {
+    await page.goto(`chrome-extension://${extensionId}/chat-window.html`);
+    await expect(page.locator('#promptSelect')).toHaveValue('pa');
+    await page.evaluate(() => window.postMessage({ type: 'INIT_CHAT', chatId: 'prompt-e2e', promptId: null }, window.location.origin));
+    await expect(page.locator('#promptSelect')).toHaveValue('');
+    await page.evaluate(() => window.postMessage({ type: 'TOGGLE_SETTINGS_PANEL' }, window.location.origin));
+    await page.locator('#promptSelect').selectOption('pb');
+    await expect.poll(() => serviceWorker.evaluate(async () => (await chrome.storage.local.get('ui_chat_prompt_v1_prompt-e2e'))['ui_chat_prompt_v1_prompt-e2e'])).toBe('pb');
+    await page.close();
+    page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/chat-window.html`);
+    await page.evaluate(() => window.postMessage({ type: 'INIT_CHAT', chatId: 'prompt-e2e', promptId: 'pa' }, window.location.origin));
+    await expect(page.locator('#promptSelect')).toHaveValue('pb');
+    await page.locator('#messageInput').fill('e2e hello');
+    await page.locator('#sendBtn').click();
+    await expect(page.locator('.message-assistant .message-content')).toContainText('E2E reply');
+    const session = await serviceWorker.evaluate(async () => (await chrome.storage.local.get('chat_prompt-e2e'))['chat_prompt-e2e'] as { messages: Array<{ promptSnapshot: unknown }> });
+    expect(session.messages.map(message => message.promptSnapshot)).toEqual([
+      { id: 'pb', name: 'B', content: 'Instruction B' }, { id: 'pb', name: 'B', content: 'Instruction B' }
+    ]);
+    await page.evaluate(() => window.postMessage({ type: 'TOGGLE_SETTINGS_PANEL' }, window.location.origin));
+    await page.locator('#promptSelect').selectOption('');
+    await expect.poll(() => serviceWorker.evaluate(async () => (await chrome.storage.local.get('ui_chat_prompt_v1_prompt-e2e'))['ui_chat_prompt_v1_prompt-e2e'])).toBeNull();
+    await serviceWorker.evaluate(async config => chrome.storage.local.set({ app_meta_v5: config }), config);
+    await expect(page.locator('#promptSelect')).toHaveValue('');
+    await page.close();
+    page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/chat-window.html`);
+    await page.evaluate(() => window.postMessage({ type: 'INIT_CHAT', chatId: 'prompt-e2e', promptId: 'pb' }, window.location.origin));
+    await expect(page.locator('#promptSelect')).toHaveValue('');
+  } finally {
+    await page.close();
+    await serviceWorker.evaluate(async config => {
+      await chrome.storage.local.set({ app_meta_v5: config });
+      await chrome.storage.local.remove(['chat_prompt-e2e', 'ui_chat_prompt_v1_prompt-e2e']);
+      const stored = await chrome.storage.local.get('chat_index_v5');
+      await chrome.storage.local.set({ chat_index_v5: (stored.chat_index_v5 as Array<{ chatId: string }> ?? []).filter(item => item.chatId !== 'prompt-e2e') });
+    }, original);
+  }
+});
+
 test('completes a chat round trip through the real extension', async () => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/chat-window.html`);

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import chatHtml from '../../chat-window.html?raw';
-import { STORAGE_KEY } from '../../src/shared/constants';
-import { chatSessionKey } from '../../src/shared/storage';
+import { STORAGE_KEY, META_KEY } from '../../src/shared/constants';
+import { chatSessionKey, getConfig, saveConfig } from '../../src/shared/storage';
 import type { ChatRequest, ChatSession, PersistedMessage, RootStore, StreamEvent, UsageMetrics } from '../../src/shared/types';
 import { getChromeState, type PortMock } from '../helpers/chrome-mock';
 import {
   createPersistedMessage,
+  createPrompt,
   createProvider,
   createRootStore
 } from '../helpers/factories';
@@ -177,6 +178,146 @@ describe('chat window streaming', () => {
       document.querySelector('.message-assistant .message-content')?.textContent?.includes('chunk-39')
     );
     expect(document.querySelector('.message-assistant .message-content')?.textContent).toContain('chunk-0');
+  });
+});
+
+describe('chat window prompt switching', () => {
+  const prompts = [createPrompt({ id: 'pa', name: 'A', content: 'Instruction A' }), createPrompt({ id: 'pb', name: 'B', content: 'Instruction B' })];
+  async function bootPromptChat() {
+    await bootChat({
+      providers: [createProvider({ id: 'p1' })], prompts,
+      featureSettings: { ...baseFeatureSettings, defaultProviderId: 'p1', defaultPromptId: 'pa' }
+    });
+    window.postMessage({ type: 'INIT_CHAT', chatId: 'prompt-chat', promptId: 'pa', historyMessages: [
+      createPersistedMessage({ id: 'u1', role: 'user', content: 'old question', promptId: 'pa', parentId: null }),
+      createPersistedMessage({ id: 'a1', content: 'old answer', promptId: 'pa', parentId: 'u1' })
+    ], activeLeafId: 'a1' }, window.location.origin);
+    await waitFor(() => document.querySelectorAll('.message').length === 2);
+  }
+  async function act(action: 'send' | 'edit' | 'regenerate') {
+    if (action === 'send') {
+      setValue(el<HTMLTextAreaElement>('messageInput'), 'next question');
+      el<HTMLButtonElement>('sendBtn').click();
+    } else if (action === 'edit') {
+      document.querySelector<HTMLButtonElement>('.message-action-edit')!.click();
+      const input = await waitFor(() => document.querySelector<HTMLTextAreaElement>('.message-edit-input'));
+      input.value = 'edited question';
+      document.querySelector<HTMLButtonElement>('.message-edit-save')!.click();
+    } else {
+      document.querySelector<HTMLButtonElement>('.message-action-regenerate')!.click();
+    }
+    return waitFor(() => lastStartChat());
+  }
+  for (const action of ['send', 'edit', 'regenerate'] as const) {
+    for (const selected of ['pb', '']) {
+      it(`${action} uses the current ${selected || 'no-prompt'} selection instead of the historical prompt`, async () => {
+        await bootPromptChat();
+        setValue(el<HTMLSelectElement>('promptSelect'), selected);
+        const request = await act(action);
+        expect(request.promptId).toBe(selected || null);
+        expect(request.messages.filter(message => message.role === 'system')).toEqual(
+          selected ? [{ role: 'system', content: 'Instruction B' }] : []
+        );
+        expect(request).toMatchObject({ promptSnapshot: selected ? { id: 'pb', name: 'B', content: 'Instruction B' } : null });
+        if (action === 'send') expect(request.messages.filter(message => message.role !== 'system').map(message => message.content))
+          .toEqual(['old question', 'old answer', 'next question']);
+      });
+    }
+  }
+  it('restores an explicit no-prompt session without adopting the global default', async () => {
+    await bootPromptChat();
+    window.postMessage({ type: 'INIT_CHAT', chatId: 'no-prompt-chat', promptId: null }, window.location.origin);
+    await waitFor(() => el<HTMLSelectElement>('promptSelect').value === '');
+    expect((await act('send')).promptId).toBeNull();
+  });
+  it('saves a selection immediately and restores it without sending a message', async () => {
+    await bootPromptChat();
+    setValue(el<HTMLSelectElement>('promptSelect'), 'pb');
+    await waitFor(() => state.storage['ui_chat_prompt_v1_prompt-chat'] !== undefined);
+    await new Promise<void>(resolve => {
+      window.addEventListener('message', () => resolve(), { once: true });
+      window.postMessage({ type: 'INIT_CHAT', chatId: 'prompt-chat', promptId: 'pa' }, window.location.origin);
+    });
+    await waitFor(() => el<HTMLSelectElement>('promptSelect').value === 'pb');
+  });
+  it('keeps no-prompt selected after global defaults and prompt content change', async () => {
+    await bootPromptChat();
+    setValue(el<HTMLSelectElement>('promptSelect'), '');
+    const config = await getConfig();
+    config.featureSettings.defaultPromptId = 'pb';
+    config.prompts[0].name = 'Renamed A';
+    await saveConfig(config);
+    state.emitStorageChange({ [META_KEY]: { newValue: config } });
+    await waitFor(() => el<HTMLSelectElement>('promptSelect').options[1].text === 'Renamed A');
+    expect(el<HTMLSelectElement>('promptSelect').value).toBe('');
+    expect((await act('send')).messages.some(message => message.role === 'system')).toBe(false);
+  });
+  for (const action of ['send', 'edit', 'regenerate'] as const) {
+    it(`${action} reports a deleted selected prompt without creating a turn`, async () => {
+      await bootPromptChat();
+      const config = await getConfig();
+      config.prompts = config.prompts.filter(prompt => prompt.id !== 'pa');
+      await saveConfig(config);
+      state.emitStorageChange({ [META_KEY]: { newValue: config } });
+      await waitFor(() => el<HTMLSelectElement>('promptSelect').selectedOptions[0].text.includes('unavailable'));
+      if (action === 'send') {
+        setValue(el<HTMLTextAreaElement>('messageInput'), 'next question');
+        el<HTMLButtonElement>('sendBtn').click();
+      } else if (action === 'edit') {
+        document.querySelector<HTMLButtonElement>('.message-action-edit')!.click();
+        document.querySelector<HTMLTextAreaElement>('.message-edit-input')!.value = 'edited question';
+        document.querySelector<HTMLButtonElement>('.message-edit-save')!.click();
+      } else document.querySelector<HTMLButtonElement>('.message-action-regenerate')!.click();
+      await waitFor(() => el('composerStatus').dataset.variant === 'error');
+      expect(el('composerStatusText').textContent).toBe(t('chat__statusPromptUnavailable'));
+      expect(lastStartChat()).toBeNull();
+      expect(document.querySelectorAll('.message')).toHaveLength(2);
+    });
+  }
+  it('continues an in-flight reply when saving a prompt selection fails', async () => {
+    await bootPromptChat();
+    const request = await act('send');
+    state.failNextSetForKey('ui_chat_prompt_v1_prompt-chat');
+    setValue(el<HTMLSelectElement>('promptSelect'), 'pb');
+    await waitFor(() => el('composerStatus').dataset.variant === 'error');
+    expect(el<HTMLButtonElement>('sendBtn').classList.contains('is-loading')).toBe(true);
+    emit({ type: 'completed', requestId: request.requestId, response: {
+      content: 'Reply survives storage failure', reasoningSummary: null, toolCalls: [], usage: null, sources: [], searchMeta: null
+    } });
+    await waitFor(() => document.querySelectorAll('.message').length === 4);
+    expect(document.querySelectorAll('.message-assistant .message-content')[1].textContent).toContain('Reply survives storage failure');
+  });
+  it('keeps an in-flight request and its retry on A while the next turn uses B', async () => {
+    await bootPromptChat();
+    const first = await act('send');
+    setValue(el<HTMLSelectElement>('promptSelect'), 'pb');
+    const config = await getConfig();
+    config.prompts[0].content = 'Changed A';
+    await saveConfig(config);
+    emit({ type: 'failed', requestId: first.requestId, error: 'failed', code: 'http_error', retryable: true, status: 500 });
+    await waitFor(() => !el<HTMLButtonElement>('composerRetryBtn').hidden);
+    setValue(el<HTMLSelectElement>('promptSelect'), '');
+    expect(el<HTMLButtonElement>('composerRetryBtn').hidden).toBe(false);
+    el<HTMLButtonElement>('composerRetryBtn').click();
+    const retry = await waitFor(() => startChatPayloads()[1]);
+    expect(retry.promptId).toBe('pa');
+    expect(retry.promptSnapshot?.content).toBe('Instruction A');
+    expect(retry.messages[0]).toEqual({ role: 'system', content: 'Instruction A' });
+    emit({ type: 'completed', requestId: retry.requestId, response: {
+      content: 'Answer under A', reasoningSummary: null, toolCalls: [], usage: null, sources: [], searchMeta: null
+    } });
+    await waitFor(() => !el<HTMLButtonElement>('sendBtn').classList.contains('is-loading'));
+    setValue(el<HTMLSelectElement>('promptSelect'), 'pb');
+    // Branching copies the local messages, including their actual request snapshots.
+    const branchButton = await waitFor(() => document.querySelectorAll<HTMLButtonElement>('.message-action-branch')[3]);
+    branchButton.click();
+    const branch = await waitFor(() => (state.runtimeMessages.find(message => (message as { type?: string }).type === 'BRANCH_CHAT_WINDOW') as { chat?: ChatSession })?.chat);
+    expect(branch.messages.slice(-2).map(message => message.promptSnapshot?.content)).toEqual(['Instruction A', 'Instruction A']);
+    setValue(el<HTMLTextAreaElement>('messageInput'), 'follow-up');
+    el<HTMLButtonElement>('sendBtn').click();
+    const next = await waitFor(() => startChatPayloads()[2]);
+    expect(next.promptId).toBe('pb');
+    expect(next.messages.filter(message => message.role === 'system')).toEqual([{ role: 'system', content: 'Instruction B' }]);
   });
 });
 
