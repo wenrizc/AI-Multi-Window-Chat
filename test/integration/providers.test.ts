@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { completeProviderTurn, streamProviderResponse } from '../../src/providers/openai-compatible';
+import { completeProviderTurn, streamProviderResponse, testProviderConnection } from '../../src/providers/openai-compatible';
 import { runSearchToolSession } from '../../src/search/tool-session';
 import type { ChatRequestMessage, StreamEvent, StreamEventPayload } from '../../src/shared/types';
 import { createModel, createProvider, createSearchSettings, createSearchTool, TEST_BASE_URL } from '../helpers/factories';
@@ -124,6 +124,24 @@ describe('chat completions parsing', () => {
     expect(turn.usage?.inputTokens).toBe(11);
     expect(turn.usage?.outputTokens).toBe(7);
     expect(turn.usage?.reasoningTokens).toBe(2);
+  });
+});
+
+describe('provider connection checks', () => {
+  it.each([
+    { transport: 'chat_completions' as const, path: '/chat/completions' },
+    { transport: 'responses' as const, path: '/responses' }
+  ])('uses the configured model and transport for $transport', async ({ transport, path }) => {
+    server.use(http.post(`${TEST_BASE_URL}${path}`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      expect(body.model).toBe('test-model');
+      expect(body.stream).toBe(false);
+      return transport === 'responses'
+        ? HttpResponse.json({ id: 'response-test', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] })
+        : HttpResponse.json({ choices: [{ message: { content: 'OK' } }] });
+    }));
+
+    await testProviderConnection(createProvider({ transport }));
   });
 });
 

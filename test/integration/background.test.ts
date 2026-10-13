@@ -506,7 +506,7 @@ it('disconnecting one window aborts its in-flight HTTP request while another win
 
 describe('background runtime messages', () => {
   it('tests a provider connection through TEST_PROVIDER', async () => {
-    server.use(http.get(`${TEST_BASE_URL}/models`, () => HttpResponse.json({ data: [] })));
+    server.use(http.post(`${TEST_BASE_URL}/chat/completions`, () => HttpResponse.json({ choices: [{ message: { content: 'OK' } }] })));
 
     const response = await state.dispatchRuntimeMessage({
       type: 'TEST_PROVIDER',
@@ -516,7 +516,7 @@ describe('background runtime messages', () => {
   });
 
   it('reports a failed provider connection through TEST_PROVIDER', async () => {
-    server.use(http.get(`${TEST_BASE_URL}/models`, () => new HttpResponse('denied', { status: 401 })));
+    server.use(http.post(`${TEST_BASE_URL}/chat/completions`, () => new HttpResponse('denied', { status: 401 })));
 
     const response = await state.dispatchRuntimeMessage({
       type: 'TEST_PROVIDER',

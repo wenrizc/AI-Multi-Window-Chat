@@ -590,6 +590,27 @@ body {
   margin: 0 0 0.65em;
 }
 
+.message-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.message-content th,
+.message-content td {
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.message-content th {
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+
 .message-content ul,
 .message-content ol {
   margin: 0.6em 0 0.7em;

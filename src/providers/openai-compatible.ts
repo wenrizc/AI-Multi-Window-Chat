@@ -982,11 +982,32 @@ export async function streamProviderResponse(input: {
 }
 
 export async function testProviderConnection(provider: ProviderConfig): Promise<void> {
+  const model = provider.modelCatalog.find(item => item.modelId === provider.defaultModel)
+    ?? provider.modelCatalog[0];
+  if (!model?.modelId) {
+    throw new ProviderError('model_unavailable', 'No model is configured for this provider.', { retryable: false });
+  }
+
   const guard = new RequestGuard({ budget: CONNECT_TIMEOUTS });
   try {
-    const response = await fetchWithGuard(`${normalizeBaseUrl(provider.baseUrl)}/models`, {
-      method: 'GET',
-      headers: createHeaders(provider)
+    const url = provider.transport === 'responses'
+      ? `${normalizeBaseUrl(provider.baseUrl)}/responses`
+      : `${normalizeBaseUrl(provider.baseUrl)}/chat/completions`;
+    const body = provider.transport === 'responses'
+      ? {
+          model: model.modelId,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: 'Reply with OK.' }] }],
+          stream: false
+        }
+      : {
+          model: model.modelId,
+          messages: [{ role: 'user', content: 'Reply with OK.' }],
+          stream: false
+        };
+    const response = await fetchWithGuard(url, {
+      method: 'POST',
+      headers: createHeaders(provider),
+      body: JSON.stringify(body)
     }, guard);
 
     if (!response.ok) {
