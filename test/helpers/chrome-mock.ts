@@ -268,7 +268,7 @@ export function createChromeMock(options: { messages?: MessagesMap } = {}): Chro
     },
     runtime: {
       id: 'test-extension-id',
-      getManifest: () => ({ version: '2.0.0' }),
+      getManifest: () => ({ version: '2.1.0' }),
       getURL: (path = '') => `chrome-extension://test-extension-id/${String(path).replace(/^\//, '')}`,
       connect: (info?: { name?: string }) => {
         const port = createPort(info?.name ?? '');

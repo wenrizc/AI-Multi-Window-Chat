@@ -1,6 +1,6 @@
 {
   "name": "ai-multi-window-extension",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "AI Multi-Window Extension",
   "keywords": [
     "ai",
@@ -37,6 +37,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:visual": "playwright test --config playwright.visual.config.ts",
     "test:e2e:deepseek": "node scripts/test-deepseek.mjs"
   },
   "devDependencies": {
