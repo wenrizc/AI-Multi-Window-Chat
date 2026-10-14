@@ -171,6 +171,16 @@ test('auth failure, retry, cancellation and missing search key recover correctly
 test('settings CRUD, export and malformed import retain saved configuration', async () => {
   const page = await open('popup.html?view=settings');
   await expect(page.locator('#profileName')).toHaveValue('Audit model');
+  const temperature = page.locator('#temperatureInput');
+  const streaming = page.locator('#supportsStreamingCheckbox');
+  await expect(temperature).toBeVisible();
+  await expect(streaming).toBeVisible();
+  expect(await temperature.evaluate(el => Boolean(el.compareDocumentPosition(document.querySelector('#supportsStreamingCheckbox')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  const streamingBox = await streaming.locator('..').boundingBox();
+  const settingsBox = await page.locator('#configTab .profile-details').boundingBox();
+  expect(streamingBox).not.toBeNull();
+  expect(settingsBox).not.toBeNull();
+  expect(streamingBox!.width).toBeLessThan(settingsBox!.width * 0.75);
   await page.locator('#profileName').fill('Renamed audit model');
   await page.locator('#saveBtn').click();
   await page.reload();

@@ -908,7 +908,8 @@ body[data-view="settings"] .config-grid {
 }
 
 .toggle-card label {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--border);
