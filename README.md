@@ -23,8 +23,12 @@ AI Multi-Window Chat lets you open multiple draggable chat windows on any page, 
 - **Selection** - Highlight text to launch a new chat with the selection
 - **History Management** - Auto-save, reopen, delete, and export chats
 - **Multiple Export Formats** - Export chats as Markdown (.md) or JSON (.json)
+- **Conversation Branching** - Edit, regenerate, and continue alternative message branches
+- **Attachments** - Send images to compatible models and include text or Markdown files in messages
 - **Prompt Management** - Create, edit, delete, import, and export custom system prompts
-- **Flexible Model Settings** - Configure transport, reasoning format, streaming, and context window per model
+- **Flexible Model Settings** - Configure provider transport and authentication, plus per-model reasoning format, streaming, and custom reasoning levels
+- **Web Search and Tool Calls** - Optionally search with Tavily and inspect tool activity and sources
+- **Reasoning and Usage** - Display provider reasoning output and token usage when available
 - **OpenAI Compatible** - Works with any OpenAI-compatible API endpoint
 
 ## Install
@@ -47,7 +51,7 @@ Install directly from the Chrome Web Store:
 
 1. Install dependencies:
    - `npm install`
-2. Build the background service worker:
+2. Build the complete extension into `release/`:
    - `npm run build`
 3. Open Chrome and go to `chrome://extensions/`
 4. Enable "Developer mode" (top right)
@@ -62,7 +66,7 @@ Install directly from the Chrome Web Store:
    - **Model Name**: e.g., `gpt-5`
    - **Transport**: `chat_completions` or `responses`
    - **Reasoning Format**: choose the format your provider returns
-   - **Streaming / Max Context Messages**: set per-model response behavior
+   - **Streaming / Reasoning Effort**: set per-model response behavior and reasoning level
 3. Click "Save Config"
 
 ## Usage
@@ -75,9 +79,13 @@ Install directly from the Chrome Web Store:
 - Use the **Prompts** tab to manage custom system prompts for your conversations.
 - Prompt switches are saved immediately. Sending, editing, and regenerating use the current selection, including explicit no prompt; in-flight replies and retries retain the original request prompt. Switching preserves conversation history and the influence of earlier replies.
 - New messages save the actual prompt name and content as a snapshot. Older messages cannot recover prompt content that was never recorded.
-- Use the **Config** tab to manage multiple API configurations, reasoning format, streaming, and context window limits.
+- Use the **Config** tab to manage multiple API configurations, reasoning format, streaming, and reasoning effort.
+- Use the chat settings panel to change the model, prompt, search, streaming, and reasoning effort for the current conversation. Requests include the full history of the active branch.
+- Use **Edit** or **Regenerate** on a message to create an alternative branch, then switch between sibling versions with the version controls.
 
 ## Development
+
+See [CHANGELOG.md](CHANGELOG.md) for version changes. The current source version is `2.1.0`; release availability is listed on the Releases page above.
 
 ### Testing
 
