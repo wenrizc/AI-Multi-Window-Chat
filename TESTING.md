@@ -125,13 +125,21 @@ Coverage by page:
 Prefer asserting observable behaviour (DOM, storage, posted messages) over
 implementation details.
 
-## End-to-end test
+## End-to-end tests
 
 `test/e2e/extension.spec.ts` launches a persistent Chromium context with the
 built `release/` extension loaded, starts an aimock server, seeds a provider
 that points at it, opens the real `chat-window.html` page, sends a message, and
 asserts the answer renders and the conversation is persisted to
 `chrome.storage.local`.
+
+The suite also covers embedded branch continuation and custom reasoning levels.
+`workflows.spec.ts` exercises attachments, edit/regenerate versions, failure and
+retry flows, settings/import/prompt management, and embedded window/history flows.
+`chat-layout.spec.ts` checks narrow layouts and scroll spacing; `i18n.spec.ts`
+checks localized interface output. See the historical
+[2026-10-13 audit](test/integration/AUDIT-2026-10-13.md) for the recorded coverage
+and limits of that run.
 
 If the extension needs a specific Chromium, Playwright is pinned to a version
 whose bundled browser is available in the environment. Do not upgrade
@@ -198,3 +206,16 @@ and [DeepSeek official quickstart](https://api-docs.deepseek.com/zh-cn/).
 3. Keep tests deterministic: `waitFor` / `expect.poll` for async work, no fixed
    sleeps, and no reliance on real network or external APIs.
 4. Run `npm run typecheck` and the affected project before opening a PR.
+
+# Settings UI regression checks
+
+After `npm run build`, run `npx playwright test test/e2e/popup-layout.spec.ts`
+for the English/Chinese, light/dark, popup/full-settings layout matrix. This
+also checks button text alignment, keyboard tabs and unlimited-storage display.
+
+Run `npm run test:visual` to compare the settings pages with reviewed screenshots.
+Windows baselines are committed and checked by the Windows visual CI job.
+For intentional appearance changes, use `npm run test:visual -- --update-snapshots`,
+inspect every changed PNG, then run the command again without updating.
+Other operating systems require their own reviewed platform baselines.
+Do not update snapshots solely to make a failing comparison pass.
