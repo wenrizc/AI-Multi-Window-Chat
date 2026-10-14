@@ -12,3 +12,6 @@ playwright-report/
 .env
 .env.*
 !.env.example
+
+# Local store screenshots
+store-screenshots/
