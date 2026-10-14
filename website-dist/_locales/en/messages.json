@@ -594,7 +594,7 @@
     "description": "Storage quota exceeded error"
   },
   "popup__storageUsage": {
-    "message": "Storage: $1 used ($2%)",
+    "message": "Storage: $1 used",
     "description": "Storage usage indicator"
   },
   "chat__noProvider": {

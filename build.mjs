@@ -135,10 +135,11 @@ async function prepareRelease() {
   await fs.rm(releaseDir, { recursive: true, force: true });
   await fs.mkdir(releaseDir, { recursive: true });
 
-  const dirsToCopy = ['icons', '_locales'];
+  const dirsToCopy = ['icons', '_locales', 'ui'];
   const filesToCopy = [
     'manifest.json',
     'popup.html',
+    'popup.css',
     'chat-window.html',
     'chat-window.css',
     'styles.css',
@@ -219,6 +220,16 @@ async function validateRelease() {
   }
 
   const referencedFiles = collectManifestFiles(manifest);
+  // HTML assets are not listed in the manifest (for example shared CSS).
+  // Validate them too so an unstyled page cannot silently pass packaging.
+  for (const page of ['popup.html', 'chat-window.html']) {
+    const html = await fs.readFile(path.join(releaseDir, page), 'utf8');
+    for (const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
+      const reference = match[1];
+      if (/^(?:[a-z]+:|\/\/|#)/i.test(reference)) continue;
+      referencedFiles.add(reference.split(/[?#]/)[0]);
+    }
+  }
   const missing = [];
   for (const relPath of referencedFiles) {
     if (isGlob(relPath)) {

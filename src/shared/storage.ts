@@ -45,8 +45,9 @@ type LegacyStore = Partial<RootStore> & { schemaVersion?: number };
 
 export interface StorageUsage {
   bytes: number;
-  quotaBytes: number;
-  ratio: number;
+  /** No fixed local-storage quota when the extension has unlimitedStorage. */
+  quotaBytes: number | null;
+  ratio: number | null;
 }
 
 export function chatSessionKey(chatId: string): string {
@@ -846,12 +847,13 @@ export async function getStorageUsage(): Promise<StorageUsage> {
     bytes = 0;
   }
 
-  const quotaBytes =
+  const unlimited = chrome.runtime.getManifest().permissions?.includes('unlimitedStorage') ?? false;
+  const quotaBytes = unlimited ? null :
     (chrome.storage.local as { QUOTA_BYTES?: number }).QUOTA_BYTES ?? DEFAULT_QUOTA_BYTES;
   return {
     bytes,
     quotaBytes,
-    ratio: quotaBytes > 0 ? bytes / quotaBytes : 0
+    ratio: quotaBytes !== null && quotaBytes > 0 ? bytes / quotaBytes : null
   };
 }
 

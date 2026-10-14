@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const html = readFileSync(resolve('chat-window.html'), 'utf8')
   .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '')
   .replace(/<link\b[^>]*>/g, '');
-const css = readFileSync(resolve('chat-window.css'), 'utf8');
+const css = readFileSync(resolve('ui/tokens.css'), 'utf8') + readFileSync(resolve('chat-window.css'), 'utf8');
 
 for (const size of [{ width: 460, height: 560 }, { width: 320, height: 360 }, { width: 690, height: 830 }]) {
   test(`chat layout keeps context compact and messages scrollable at ${size.width}x${size.height}`, async ({ page }) => {

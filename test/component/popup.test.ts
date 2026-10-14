@@ -1,6 +1,9 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import popupHtml from '../../popup.html?raw';
+import tokensCss from '../../ui/tokens.css?raw';
+import controlsCss from '../../ui/controls.css?raw';
+import popupCss from '../../popup.css?raw';
 import {
   CHAT_INDEX_KEY,
   LEGACY_STORAGE_KEY,
@@ -20,6 +23,9 @@ import {
 import { bootModule, mountExtensionHtml, resetDocument, waitFor } from '../helpers/dom';
 
 const state = getChromeState();
+let currentApp: { dispose(): void } | undefined;
+
+afterEach(() => currentApp?.dispose());
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -33,10 +39,11 @@ function setValue(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaEl
 
 async function bootPopup(overrides: Partial<RootStore> = {}): Promise<void> {
   resetDocument();
-  mountExtensionHtml(popupHtml);
+  mountExtensionHtml(popupHtml, [tokensCss, controlsCss, popupCss]);
   // Seed the legacy v4 blob so the popup runs the real migration path.
   state.seedStorage({ [LEGACY_STORAGE_KEY]: createRootStore(overrides) });
-  await bootModule('../../src/popup/index.ts');
+  const module = await bootModule('../../src/popup/index.ts') as { app: { dispose(): void } };
+  currentApp = module.app;
   await waitFor(
     () =>
       document.querySelector('#profileList .profile-item') ||
@@ -139,7 +146,7 @@ describe('popup providers', () => {
     expect(beta?.classList.contains('current')).toBe(true);
     expect(beta?.classList.contains('active')).toBe(true);
     expect(el<HTMLSelectElement>('activeProfileSelect').value).toBe('p2');
-    expect(el('footer').textContent).toContain('2.0.0');
+    expect(el('footer').textContent).toContain('2.1.0');
   });
 
   it('creates a new provider through the New button', async () => {

@@ -594,7 +594,7 @@
     "description": "存储超限错误"
   },
   "popup__storageUsage": {
-    "message": "存储占用：$1（$2%）",
+    "message": "存储占用：$1",
     "description": "存储占用提示"
   },
   "chat__noProvider": {

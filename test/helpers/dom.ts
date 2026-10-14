@@ -7,11 +7,14 @@
  * the current document. Script tags are intentionally dropped: tests import the
  * TypeScript entry points directly.
  */
-export function mountExtensionHtml(html: string): void {
+export function mountExtensionHtml(html: string, styles: readonly string[] = []): void {
   const parsed = new DOMParser().parseFromString(html, 'text/html');
 
-  for (const style of Array.from(parsed.head.querySelectorAll('style'))) {
-    document.head.appendChild(document.importNode(style, true));
+  for (const text of [...Array.from(parsed.head.querySelectorAll('style'), style => style.textContent ?? ''), ...styles]) {
+    const style = document.createElement('style');
+    style.dataset.testMount = 'true';
+    style.textContent = text;
+    document.head.appendChild(style);
   }
 
   document.body.innerHTML = parsed.body.innerHTML;
@@ -23,6 +26,9 @@ export function mountExtensionHtml(html: string): void {
 /** Remove markup and styles added by `mountExtensionHtml`. */
 export function resetDocument(): void {
   document.body.innerHTML = '';
+  document.body.className = '';
+  delete document.body.dataset.view;
+  document.querySelectorAll('style[data-test-mount]').forEach(style => style.remove());
   document.documentElement.removeAttribute('lang');
 }
 

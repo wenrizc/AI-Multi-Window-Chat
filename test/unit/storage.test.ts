@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CHAT_INDEX_KEY,
   LEGACY_STORAGE_KEY,
@@ -506,6 +506,21 @@ describe('chat sessions', () => {
 });
 
 describe('storage usage', () => {
+  it('does not treat the default 10 MB quota as a limit with unlimitedStorage', async () => {
+    const manifest = vi.spyOn(chrome.runtime, 'getManifest').mockReturnValue({
+      manifest_version: 3, name: 'Test', version: '1', permissions: ['unlimitedStorage']
+    });
+    try {
+      getChromeState().seedStorage({ payload: 'x'.repeat(11 * 1024 * 1024) });
+      const usage = await getStorageUsage();
+      expect(usage.bytes).toBeGreaterThan(10 * 1024 * 1024);
+      expect(usage.quotaBytes).toBeNull();
+      expect(usage.ratio).toBeNull();
+    } finally {
+      manifest.mockRestore();
+    }
+  });
+
   it('reports bytes, quota and ratio', async () => {
     await ensureStore();
     const usage = await getStorageUsage();
