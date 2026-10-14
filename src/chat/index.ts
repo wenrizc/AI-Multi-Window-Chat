@@ -1,5 +1,4 @@
 import { PORT_NAME, META_KEY, LEGACY_STORAGE_KEY } from '../shared/constants';
-import { normalizeCustomReasoningEfforts } from '../shared/reasoning';
 import { formatToolDisplay } from '../shared/tool-display';
 import { getConfig, getChatPromptSelection, saveChatPromptSelection, upsertChatSession } from '../shared/storage';
 import { findLatestLeafUnder, getSiblingInfo, resolveActivePath } from '../shared/conversation-tree';
@@ -26,6 +25,8 @@ import {
   writeTextToClipboard
 } from '../shared/utils';
 import { renderMarkdown, safeLinkHref } from './markdown';
+import { AttachmentView } from './components/attachments';
+import { SelectorView } from './components/selectors';
 
 const COMPOSER_STATUS_AUTO_HIDE_MS = 1000;
 const COPY_BUTTON_RESET_MS = 1200;
@@ -192,6 +193,8 @@ class ChatWindowApp {
     sessionContext: document.getElementById('sessionContext') as HTMLElement,
     jumpToLatest: document.getElementById('jumpToLatest') as HTMLButtonElement
   };
+  private readonly selectorView = new SelectorView(this.elements);
+  private readonly attachmentView = new AttachmentView(this.elements.attachmentTray);
 
   constructor() {
     this.connectPort();
@@ -459,17 +462,11 @@ class ChatWindowApp {
   }
 
   private renderReasoningOptions() {
-    const select = this.elements.reasoningEffortSelect;
-    select.querySelectorAll('[data-custom-effort]').forEach((option) => option.remove());
-    for (const value of normalizeCustomReasoningEfforts(this.getCurrentModel()?.customReasoningEfforts)) {
-      const option = new Option(value, value);
-      option.dataset.customEffort = 'true';
-      select.add(option);
-    }
-    if (!Array.from(select.options).some((option) => option.value === this.reasoningEffort)) {
-      this.reasoningEffort = 'default';
-    }
-    select.value = this.reasoningEffort;
+    this.reasoningEffort = this.selectorView.renderReasoning({
+      model: this.getCurrentModel(),
+      reasoningEffort: this.reasoningEffort,
+      streamingOverride: this.streamingOverride
+    });
   }
 
   private async addFiles(files: File[]) {
@@ -494,13 +491,10 @@ class ChatWindowApp {
   }
 
   private renderAttachments() {
-    const tray = this.elements.attachmentTray;
-    tray.hidden = this.attachments.length === 0;
-    tray.innerHTML = this.attachments.map((attachment) => `<div class="attachment-chip ${attachment.status}">${attachment.mimeType.startsWith('image/') && attachment.dataUrl ? `<img src="${attachment.dataUrl}" alt="">` : '<span class="attachment-file">TXT</span>'}<span class="attachment-name">${escapeHtml(attachment.name)}</span><span class="attachment-status">${escapeHtml(t(attachment.status === 'ready' ? 'chat__attachmentReady' : attachment.status === 'error' ? 'chat__attachmentError' : 'chat__attachmentParsing'))}</span><button type="button" data-remove-attachment="${attachment.id}" aria-label="${escapeHtml(t('chat__btnRemoveAttachment', attachment.name))}">×</button></div>`).join('');
-    tray.querySelectorAll<HTMLButtonElement>('[data-remove-attachment]').forEach((button) => button.addEventListener('click', () => {
-      this.attachments = this.attachments.filter((item) => item.id !== button.dataset.removeAttachment);
+    this.attachmentView.render(this.attachments, (id) => {
+      this.attachments = this.attachments.filter((item) => item.id !== id);
       this.renderAttachments();
-    }));
+    });
   }
 
   private handlePrimaryAction(): Promise<void> | void {
@@ -693,36 +687,28 @@ class ChatWindowApp {
   }
 
   private renderSelectors() {
-    this.elements.profileSelect.innerHTML = this.providers.length
-      ? this.providers.map((provider) => `<option value="${provider.id}">${escapeHtml(provider.name)}</option>`).join('')
-      : `<option value="">${escapeHtml(t('chat__noProvider'))}</option>`;
-
-    this.elements.promptSelect.innerHTML = [
-      `<option value="">${escapeHtml(t('prompt__noPrompt'))}</option>`,
-      ...(this.promptId && !this.prompts.some(prompt => prompt.id === this.promptId)
-        ? [`<option value="${escapeHtml(this.promptId)}">${escapeHtml(t('chat__statusPromptUnavailable'))}</option>`] : []),
-      ...this.prompts.map((prompt) => `<option value="${escapeHtml(prompt.id)}">${escapeHtml(prompt.name)}</option>`)
-    ].join('');
-
-    if (this.profileId) {
-      this.elements.profileSelect.value = this.profileId;
-    }
-    this.elements.promptSelect.value = this.promptId ?? '';
+    this.selectorView.render({
+      providers: this.providers,
+      prompts: this.prompts,
+      profileId: this.profileId,
+      promptId: this.promptId,
+      model: this.getCurrentModel(),
+      reasoningEffort: this.reasoningEffort,
+      streamingOverride: this.streamingOverride
+    });
     this.syncStreamingControl();
     this.renderSessionContext();
   }
 
   private renderSessionContext() {
-    const model = this.getCurrentModel();
-    const provider = this.providers.find((item) => item.id === this.profileId);
-    const prompt = this.prompts.find((item) => item.id === this.promptId);
-    const chips = [provider?.name || t('chat__noProvider'), model?.displayName || model?.modelId]
-      .filter(Boolean)
-      .filter((value, index, values) => values.indexOf(value) === index)
-      .map((value) => `<span class="context-chip">${escapeHtml(String(value))}</span>`);
-    if (prompt) chips.push(`<span class="context-chip">${escapeHtml(prompt.name)}</span>`);
-    if (this.elements.searchToggle.checked) chips.push(`<span class="context-chip">${escapeHtml(t('chat__searchToggle'))}</span>`);
-    this.elements.sessionContext.innerHTML = chips.join('');
+    this.selectorView.renderContext({
+      providers: this.providers,
+      prompts: this.prompts,
+      profileId: this.profileId,
+      promptId: this.promptId,
+      model: this.getCurrentModel(),
+      searchEnabled: this.elements.searchToggle.checked
+    });
   }
 
   private getCurrentModel() {
